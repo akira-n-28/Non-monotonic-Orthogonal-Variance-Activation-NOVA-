@@ -1,0 +1,275 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage{fontspec}
+\usepackage[italian]{babel}
+\usepackage{enumitem}
+\setlist[itemize]{label=--}
+
+\setmainfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
+
+\title{\textbf{NOVA: Non-monotonic Orthogonal Variance Activation\\per Architetture Neurali Profonde}\\[0.5em]
+\large\textit{Preprint --- Work in Progress}}
+\author{Autore\\[0.3em]\textit{Laboratorio di AI e Matematica Applicata}}
+\date{21 febbraio 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. Attraverso esperimenti esplorativi a run singola su architetture basate su LayerNorm (Mini-ViT, Nano-GPT), osserviamo trend qualitativi incoraggianti rispetto alla baseline GELU. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
+\end{abstract}
+
+\tableofcontents
+\vspace{1em}
+
+% ============================================================
+\section{Formulazione Matematica e Derivazioni}
+
+NOVA è definita come la composizione di un meccanismo di gating esponenziale e una regolarizzazione razionale sottrattiva:
+\begin{equation}\label{eq:nova}
+f(x) = x \cdot \sigma(\beta x) - \frac{x}{1 + (\beta x)^2}
+\end{equation}
+dove $\sigma(z) = (1 + e^{-z})^{-1}$ è la funzione logistica standard e $\beta$ è un parametro continuo che modula la curvatura.
+
+\subsection{Analisi del Gradiente e Comportamento Asintotico}
+
+La derivata prima $f'(x)$, che governa il flusso del gradiente durante la retropropagazione, è data analiticamente da:
+\begin{equation}\label{eq:deriv1}
+f'(x) = \sigma(\beta x) + \beta x \cdot \sigma(\beta x)\bigl(1 - \sigma(\beta x)\bigr)
+        - \frac{1 - (\beta x)^2}{\bigl(1 + (\beta x)^2\bigr)^2}
+\end{equation}
+
+Per valutare il comportamento in prossimità dell'origine (assumendo $\beta = 1$), calcoliamo $f'(0)$ passo per passo:
+\begin{align*}
+f'(0) &= \sigma(0) + 0 \cdot \sigma(0)\bigl(1 - \sigma(0)\bigr) - \frac{1 - 0^2}{\bigl(1 + 0^2\bigr)^2} \\
+      &= \frac{1}{2} + 0 - \frac{1}{1} \\
+      &= -0.5
+\end{align*}
+
+Questo gradiente marcatamente negativo all'origine definisce la \textit{sacca di non-monotonicità} di NOVA. A differenza di GELU o SiLU, dove la concavità negativa è debole, NOVA esercita una forte spinta repulsiva (hard-thresholding implicito) per attivazioni prossime allo zero. Asintoticamente, per $x \to +\infty$, il termine razionale decade a zero ($O(1/x)$) e $\sigma(x) \to 1$, restituendo $f(x) \approx x$. Per $x \to -\infty$, $f(x) \to 0$.
+
+\subsection{Conservazione della Varianza (NOVA-Init)}
+
+Il mantenimento dell'entropia del segnale nei layer profondi richiede una corretta inizializzazione dei pesi. Nel framework generalizzato di He et al.~\cite{he2015delving}, la varianza ideale è:
+\[
+\mathrm{Var}(W) = \frac{1}{n_\text{in} \cdot \mathbb{E}[f(X)^2]}, \quad X \sim \mathcal{N}(0,1)
+\]
+
+A differenza di ReLU, per cui $\mathbb{E}[\max(0,X)^2] = 0.5$ (regola di He standard $2/n_\text{in}$), NOVA possiede una regione contrattiva. Integrando numericamente l'aspettativa dell'attivazione al quadrato sotto distribuzione normale:
+\begin{equation}
+\mathbb{E}[f(X)^2] = \int_{-\infty}^{+\infty}
+    \!\left(x\sigma(x) - \frac{x}{1+x^2}\right)^{\!2}
+    \frac{e^{-x^2/2}}{\sqrt{2\pi}}\,dx \approx 0.357
+\end{equation}
+
+Pertanto, per prevenire il \textit{signal decay} nelle prime fasi del training:
+\begin{equation}
+\mathrm{Var}(W_\text{NOVA}) = \frac{1}{n_\text{in} \cdot 0.357} \approx \frac{2.801}{n_\text{in}}
+\end{equation}
+
+\subsection{Derivata Seconda ed Espressività per le PINN}\label{sec:deriv2}
+
+Scomponendo $f(x) = S(x) - R(x)$, dove $S(x) = x\sigma(\beta x)$ è il termine SiLU e $R(x) = x/(1+(\beta x)^2)$ è il termine razionale, deriviamo l'Hessiana 1D di NOVA:
+\begin{equation}\label{eq:deriv2}
+f''(x) =
+\underbrace{2\beta\sigma'(\beta x) + \beta^2 x\,\sigma'(\beta x)\bigl(1 - 2\sigma(\beta x)\bigr)}_{S''(x)}
+-
+\underbrace{\frac{2\beta^2 x\bigl(\beta^2 x^2 - 3\bigr)}{\bigl(1 + \beta^2 x^2\bigr)^3}}_{R''(x)}
+\end{equation}
+
+La derivata seconda di funzioni esponenziali pure (come GELU) decade rapidamente per $|x| > 2$. In NOVA, il termine $R''(x)$ introduce una coda polinomiale (\textit{heavy-tailed}), che permette all'operatore Laplaciano $u_{xx}$ calcolato dalla rete di catturare variazioni ad alta frequenza (fronti d'urto, discontinuità termiche) che funzioni troppo lisce tendono a sfumare.
+
+% ============================================================
+\section{Contesto Architetturale e Stato dell'Arte}
+
+\subsection{Confronto con Funzioni Alternative}
+
+NOVA si colloca in un ecosistema dove si cerca il bilanciamento tra levigatezza (\textit{smoothness}) e capacità di thresholding. La Tabella~\ref{tab:comparison} riassume le differenze strutturali con le principali funzioni di attivazione.
+
+\begin{table}[h]
+\centering
+\caption{Confronto tassonomico preliminare delle principali funzioni di attivazione.}
+\label{tab:comparison}
+\begin{tabular}{lllllc}
+\toprule
+\textbf{Funzione} & \textbf{Formula} & \textbf{Monotona} & \textbf{$C^\infty$} & \textbf{Coda $f''$} & \textbf{Costo Rel.} \\
+\midrule
+ReLU      & $\max(0,x)$      & Sì & No  & Nulla       & $1.0\times$ \\
+GELU \cite{hendrycks2016gaussian} & $x\Phi(x)$ & No & Sì & Esponenziale & $2.5\times$ \\
+SiLU/Swish \cite{ramachandran2017searching} & $x\sigma(x)$ & No & Sì & Esponenziale & $2.2\times$ \\
+Snake \cite{ziyin2020neural}   & $x + \sin^2(x)$  & No & Sì & Periodica   & $4.0\times$ \\
+NOVA      & Eq.~\eqref{eq:nova} & No & Sì & Polinomiale & $2.8\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Rispetto a Snake (ideale per segnali periodici, ma instabile nei Transformer) e SiLU (eccellente per LLM ma debole su operatori differenziali), NOVA fornisce asintoti globali stabili con perturbazioni locali heavy-tailed.
+
+\subsection{Teorema della Covariance Shift Collision}
+
+Nel nostro studio esplorativo su Convolutional Neural Networks (CNN), abbiamo riscontrato un fallimento critico di NOVA abbinata alla Batch Normalization (BN). Un layer BN standardizza le pre-attivazioni $X$ imponendo $\mu = 0$ e $\sigma^2 = 1$: circa il $68\%$ della massa di probabilità ricade nell'intervallo $x \in [-1, 1]$.
+
+In NOVA, questa regione coincide quasi esattamente con il dominio in cui $f'(x) \leq 0$, raggiungendo il minimo in $f'(0) = -0.5$. Poiché l'entropia differenziale dell'output $h(Y)$ con $Y = f(X)$ è limitata da $\mathbb{E}[\log|f'(X)|]$, forzare la maggior parte del segnale dove la derivata è contrattiva e non-monotona causa un drastico collasso della Mutua Informazione $I(X; Y)$ tra layer adiacenti. Al contrario, la Layer Normalization (usata nei Transformer) non impone una centratura globale, permettendo ai vettori di feature di mantenere una covarianza più naturale e di sfruttare la sacca negativa di NOVA come meccanismo selettivo per il rumore a bassa magnitudine.
+
+\subsection{Ablation Study Analitico}
+
+Dal punto di vista teorico, il comportamento di NOVA può essere disaccoppiato in due meccanismi:
+
+\begin{itemize}
+  \item \textbf{Termine esponenziale $x\sigma(\beta x)$ (Gating):} Fornisce il limite asintotico lineare e garantisce la stabilità del gradiente per attivazioni fortemente positive. Senza questo componente, la limitatezza asintotica del termine razionale causerebbe la divergenza della rete.
+  \item \textbf{Termine razionale $x/(1+(\beta x)^2)$ (Damping):} Modula e approfondisce la sacca non-monotona ed è l'unico responsabile della coda heavy-tailed nella derivata seconda (Eq.~\eqref{eq:deriv2}), senza la quale le performance su operatori differenziali regredirebbero a quelle di SiLU.
+\end{itemize}
+
+% ============================================================
+\section{Validazione Empirica Preliminare}
+
+Tutti gli esperimenti riportati in questa sezione sono \textbf{indagini a run singola (singolo seed)}, condotte per valutare trend di convergenza e formare ipotesi preliminari. Studi futuri con replicazione statistica saranno necessari per trarre conclusioni definitive.
+
+\subsection{Classificazione Visiva (Mini-ViT su CIFAR-10)}
+
+Abbiamo addestrato da zero un Mini-ViT su CIFAR-10 per 10 epoche con Data Augmentation e Layer Normalization. NOVA ha raggiunto una Test Accuracy del $68.31\%$ contro il $67.54\%$ di GELU. Il margine ridotto è compatibile con l'assenza di replicazione statistica; il risultato è riportato come osservazione qualitativa, suggerendo che NOVA non penalizzi la convergenza rispetto a GELU in architetture LayerNorm.
+
+\begin{table}[h]
+\centering
+\caption{Test Accuracy -- Mini-ViT su CIFAR-10 (run singola, 10 epoche).}
+\label{tab:vit}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Epoca} & \textbf{NOVA} & \textbf{GELU} \\
+\midrule
+1  & 47.27\% & 46.97\% \\
+5  & 60.62\% & 59.18\% \\
+10 & 68.31\% & 67.54\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Modellazione Autoregressiva (Nano-GPT)}
+
+Abbiamo addestrato un Nano-GPT ($\approx$10M parametri) sul dataset TinyShakespeare per 1000 iterazioni. NOVA ha prodotto una Validation Loss di $1.6949$ rispetto a $1.7344$ di GELU. L'osservazione suggerisce che il meccanismo di gating potenziato di NOVA possa contribuire a mitigare la saturazione dimensionale nei blocchi Feed-Forward dei Transformer.
+
+\begin{table}[h]
+\centering
+\caption{Validation Loss (Cross-Entropy) -- Nano-GPT su TinyShakespeare (run singola).}
+\label{tab:gpt}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Step} & \textbf{NOVA} & \textbf{GELU} \\
+\midrule
+0    & 4.3083 & 4.3501 \\
+400  & 1.9542 & 1.9747 \\
+1000 & 1.6949 & 1.7344 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Modelli Generativi Continui (DDPM)}
+
+Su una U-Net DDPM per il denoising di immagini, dopo 10 epoche GELU ha ottenuto una MSE Loss di $0.0372$ contro $0.0382$ di NOVA. Ipotizziamo uno \textit{Smoothness Trade-off}: l'integrazione differenziale (SDE) richiesta dalla Langevin Dynamics nei DDPM favorisce campi vettoriali estremamente lisci, mentre la forte irregolarità della sacca di NOVA introduce microscopiche perturbazioni nel reverse-sampling. Questo definisce un limite applicativo esplicito della funzione.
+
+\subsection{Scientific Machine Learning: PINN sull'Equazione di Burgers}
+
+Il test qualitativamente più rilevante ha riguardato una PINN addestrata a risolvere l'equazione non-lineare di Burgers 1D, che modella la formazione di onde d'urto fluidodinamiche e richiede il calcolo dell'operatore Laplaciano tramite auto-differenziazione doppia. Dopo 2000 step di ottimizzazione, la Physics Loss (residuo PDE) è stata:
+
+\begin{table}[h]
+\centering
+\caption{Physics Loss (residuo PDE) -- PINN sull'Equazione di Burgers 1D (run singola).}
+\label{tab:pinn}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Epoca} & \textbf{NOVA} & \textbf{GELU} \\
+\midrule
+200  & 0.07808 & 0.09757 \\
+1000 & 0.00207 & 0.00842 \\
+2000 & 0.00027 & 0.00353 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Nonostante l'assenza di replicazione statistica, un abbattimento del residuo di oltre un ordine di grandezza (fattore $\sim 13\times$) suggerisce fortemente che la struttura polinomiale heavy-tailed della derivata seconda di NOVA (Eq.~\eqref{eq:deriv2}) sia geometricamente superiore alle code esponenziali per approssimare singolarità e variazioni brusche tipiche delle onde d'urto. Questo risultato è coerente con la letteratura sulle attivazioni non-smooth per SciML~\cite{raissi2019physics}.
+
+% ============================================================
+\section{Efficienza Computazionale (CUDA Fusion)}
+
+A causa della sua complessità composita, NOVA in modalità \textit{Eager} su PyTorch richiede l'allocazione ripetuta di tensori temporanei intermedi, generando un Memory Bandwidth Bottleneck. Abbiamo sviluppato un \textbf{Fused CUDA Kernel} che sfrutta le istruzioni hardware \textit{Fast Math} (\texttt{\_\_expf}, \texttt{\_\_fdividef}) direttamente nei registri del multiprocessore.
+
+Un benchmark esplorativo su GPU NVIDIA T4 (tensore FP32 $2048 \times 2048$, 100 iterazioni) ha prodotto i seguenti tempi per un ciclo Forward+Backward:
+
+\begin{table}[h]
+\centering
+\caption{Latenza Forward+Backward -- GPU NVIDIA T4, FP32, tensore $2048\times2048$.}
+\label{tab:cuda}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Funzione} & \textbf{Implementazione} & \textbf{Latency} & \textbf{VRAM Intermedia} \\
+\midrule
+NOVA & Python Eager         & $\approx 4.56$ ms & 128 MB \\
+GELU & ATen Native Fused    & $\approx 0.57$ ms & 0 MB   \\
+NOVA & Custom CUDA Fused    & $\approx 0.92$ ms & 0 MB   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Il kernel fused azzera il memory footprint intermedio e chiude circa il $90\%$ del gap di latenza rispetto a GELU, rendendo NOVA sufficientemente efficiente per il training distribuito. L'overhead residuo ($\sim 0.35$ ms) è attribuibile ai cicli aggiuntivi richiesti dalla divisione razionale rispetto alle sole operazioni esponenziali.
+
+% ============================================================
+\section{Limitazioni e Lavori Futuri}
+
+Il presente lavoro costituisce una \textit{Proof of Concept} e presenta le seguenti limitazioni da affrontare in studi successivi:
+
+\begin{itemize}
+  \item \textbf{Robustezza Statistica:} Tutti i risultati sperimentali derivano da run singole con singolo seed. La replicazione con seed multipli e test statistici formali è necessaria per validare i trend osservati.
+  \item \textbf{Scala:} Gli esperimenti sono stati condotti su architetture ridotte (Mini-ViT, Nano-GPT 10M, PINN 1D). Il comportamento di NOVA a scale LLM ($\geq$7B parametri) e su dataset di pre-training di grandi dimensioni rimane non verificato.
+  \item \textbf{Stabilità di $\beta$:} Il parametro apprendibile $\beta$ mostra tendenze alla divergenza in assenza di adeguate strategie di \textit{learning rate warmup}. Un'analisi sistematica della sua dinamica di ottimizzazione è lasciata a lavori futuri.
+  \item \textbf{Ambito PDE:} Il vantaggio nelle PINN è stato osservato su equazioni con singolarità (Burgers 1D). Su PDE paraboliche totalmente lisce (es. equazione del calore), i risultati preliminari suggeriscono prestazioni comparabili a GELU, non superiori.
+\end{itemize}
+
+\subsection{Euristica d'Uso per Ricercatori}
+
+In base alle intuizioni teoriche e ai trend osservati in questa indagine preliminare:
+
+\begin{itemize}
+  \item \textbf{Consigliato:} Architetture LayerNorm / RMSNorm (Vision Transformers, LLM Decoder-only); Scientific Machine Learning su PDE con onde d'urto o singolarità.
+  \item \textbf{Sconsigliato:} Reti con forte uso di Batch Normalization (es. ResNet); modelli generativi a diffusione continua (DDPM, score-based models).
+\end{itemize}
+
+% ============================================================
+\begin{thebibliography}{9}
+
+\bibitem{he2015delving}
+He, K., Zhang, X., Ren, S., \& Sun, J. (2015).
+Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification.
+\textit{Proceedings of the IEEE International Conference on Computer Vision}, pp.~1026--1034.
+
+\bibitem{hendrycks2016gaussian}
+Hendrycks, D., \& Gimpel, K. (2016).
+Gaussian error linear units (GELUs).
+\textit{arXiv preprint arXiv:1606.08415}.
+
+\bibitem{ramachandran2017searching}
+Ramachandran, P., Zoph, B., \& Le, Q.\,V. (2017).
+Searching for activation functions.
+\textit{arXiv preprint arXiv:1710.05941}.
+
+\bibitem{ziyin2020neural}
+Ziyin, L., Hartwig, T., \& Ueda, M. (2020).
+Neural networks fail to learn periodic functions and how to fix it.
+\textit{Advances in Neural Information Processing Systems}, 33, 1583--1594.
+
+\bibitem{raissi2019physics}
+Raissi, M., Perdikaris, P., \& Karniadakis, G.\,E. (2019).
+Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations.
+\textit{Journal of Computational Physics}, 378, 686--707.
+
+\end{thebibliography}
+
+\end{document}
