@@ -1,1 +1,0 @@
-# Non-monotonic-Orthogonal-Variance-Activation-NOVA-
