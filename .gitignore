@@ -1,0 +1,13 @@
+# Dati scaricati
+data/
+
+# Compilazione CUDA JIT
+__pycache__/
+*.pyc
+*.so
+build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
