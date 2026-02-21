@@ -18,10 +18,11 @@ Dove β (beta) è un parametro apprendibile.
 
 ## **3\. Stato Tecnico e Kernel CUDA**
 
-Il Kernel CUDA fuso (forward/backward) è implementato ma ha dei **bug noti e limitazioni da rispettare**:
+Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteristiche:
 
-* Il gradiente per il parametro β non è attualmente calcolato nel backward pass C++ (è trattato come costante fissa a 1.0 per default nei test scalati).  
-* Manca il supporto nativo per precisione BF16/FP16 ottimizzata.
+* Il backward pass calcola i gradienti sia per l'input x sia per il parametro β (riduzione via `torch::sum` sul gradiente per-elemento).
+* Supporto nativo per FP32, FP64, FP16 (Half) e BF16 tramite `AT_DISPATCH_FLOATING_TYPES_AND2`. Le operazioni intermedie sono eseguite in float32 per stabilità numerica.
+* β è registrato come `nn.Parameter` apprendibile in `NOVAFusedCUDA`.
 
 ## **4\. Linee Guida per il Paper LaTeX**
 
