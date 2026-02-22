@@ -61,8 +61,8 @@ NUM_CLASSES = 200
 IMG_SIZE = 64
 LABEL_SMOOTHING = 0.1
 
-# Batch size ridotto rispetto a CIFAR: immagini 64×64 = 4× la VRAM di 32×32
-# LR scalato con sqrt(batch_size/1024)
+# Batch size calibrato per saturare ~14 GB su T4 (16 GB totali).
+# LR scalato con sqrt rule rispetto al baseline.
 
 def _is_kaggle():
     return bool(os.environ.get("KAGGLE_KERNEL_RUN_TYPE"))
@@ -92,8 +92,8 @@ SCALING_CONFIGS = {
         "embed_dim": 256,
         "num_heads": 4,
         "num_layers": 4,
-        "batch_size": 512,
-        "lr": 2e-3,
+        "batch_size": 3072,
+        "lr": 5e-3,
         "epochs": 100,
         "warmup_epochs": 10,
         "dropout": 0.1,
@@ -110,8 +110,8 @@ SCALING_CONFIGS = {
         "embed_dim": 384,
         "num_heads": 6,
         "num_layers": 6,
-        "batch_size": 256,
-        "lr": 1e-3,
+        "batch_size": 1536,
+        "lr": 2.5e-3,
         "epochs": 100,
         "warmup_epochs": 15,
         "dropout": 0.1,
@@ -128,8 +128,8 @@ SCALING_CONFIGS = {
         "embed_dim": 512,
         "num_heads": 8,
         "num_layers": 8,
-        "batch_size": 128,
-        "lr": 5e-4,
+        "batch_size": 1024,
+        "lr": 1.4e-3,
         "epochs": 100,
         "warmup_epochs": 20,
         "dropout": 0.1,

@@ -66,7 +66,7 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Dataset: 200 classi, 100K train, 10K val, 64×64 RGB
   - Architettura: stessa famiglia ViT (Tiny/Small/Base), patch_size=8 (→ 64 patch)
   - Regolarizzazione DeiT-style calibrata per scala (lezioni da v2/v3 CIFAR-100)
-  - Batch size dimezzati vs CIFAR (immagini 4× più grandi): 512/256/128
+  - Batch size calibrati per saturare ~14 GB su T4: 3072/1536/1024
   - Include top-5 accuracy e plot cross-dataset CIFAR vs TinyImageNet
   - Uso: `python vit_tinyimagenet.py` (full run) oppure `python vit_tinyimagenet.py --plot-only`
 * **Scaling ViT v3 — Regolarizzazione Calibrata** (`experiments/vit_scaling_v3.py`): Corregge il sotto-adattamento Tiny di v2 calibrando la regolarizzazione per scala.
