@@ -52,12 +52,16 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Overfitting marcato a tutte le scale; accuracy in validazione degrada da Small a Base
   - Log in `results/vit_scaling_{scale}_{activation}_20260222*.json`
 
+* **Scaling ViT v2 — Anti-Overfitting** (`experiments/vit_scaling_v2.py`): Regolarizzazione DeiT-style (RandAugment, CutMix+Mixup, DropPath).
+  - Tiny (3.2M): NOVA 51.72% vs GELU 45.12% (+6.60) — sotto-adattamento, regolarizzazione troppo aggressiva
+  - Small (10.7M): NOVA 62.66% vs GELU 54.31% (+8.35) — miglior risultato assoluto (+3.29 vs v1)
+  - Base (25.3M): NOVA 60.31% vs GELU 53.14% (+7.17) — recupero significativo (+5.09 vs v1)
+  - Overfitting eliminato; vantaggio NOVA amplificato (da +2-4 pp in v1 a +6-8 pp in v2)
+  - β converge a ~0.45 per tutte le scale
+  - Log in `results/vit_scaling_v2_{scale}_{activation}_20260222*.json`
+  - Plot in `results/plot_v2_*.png`
+
 ### Da Fare
-* **Scaling ViT v2 — Anti-Overfitting** (`experiments/vit_scaling_v2.py`): Ripetizione dello scaling study con regolarizzazione DeiT-style per ridurre l'overfitting osservato in v1.
-  - Tecniche aggiunte: RandAugment, CutMix + Mixup, Stochastic Depth (DropPath scalato per layer)
-  - Drop path rate: Tiny 0.1, Small 0.2, Base 0.3
-  - Genera automaticamente 5 plot per il paper: training curves, scaling curve v1 vs v2, overfitting gap, evoluzione β, confronto NOVA v1 vs v2
-  - Uso: `python vit_scaling_v2.py` (full run) oppure `python vit_scaling_v2.py --plot-only` (solo plot)
 * **Nano-GPT** (TinyShakespeare): risultati preliminari nel paper (NOVA 1.6949 vs GELU 1.7344), script da aggiornare con confronto multi-attivazione.
 * **PINN Burgers 1D**: risultati preliminari nel paper (NOVA 0.00027 vs GELU 0.00353), script da aggiornare.
 * **DDPM Fashion-MNIST**: risultati preliminari nel paper (NOVA 0.0382 vs GELU 0.0372), script da aggiornare.
