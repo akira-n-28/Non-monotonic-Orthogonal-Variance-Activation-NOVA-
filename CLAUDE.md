@@ -45,11 +45,17 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Config: AdamW lr=3e-3, wd=0.05, warmup 10ep + cosine, batch 1024, label smoothing 0.1
   - Log in `results/vit_cifar100_{activation}_20260222.json`
 
+* **Scaling ViT** (`experiments/vit_scaling.py`): Studio di scaling NOVA vs GELU su 3 varianti ViT, CIFAR-100, 100 epoche, FP16, 2×T4 Kaggle.
+  - Tiny (4L, 256d, 4h, 3.2M params): NOVA 56.71% vs GELU 54.43% (+2.28)
+  - Small (6L, 384d, 6h, 10.7M params): NOVA 59.37% vs GELU 55.48% (+3.89)
+  - Base (8L, 512d, 8h, 25.3M params): NOVA 55.22% vs GELU 51.15% (+4.07)
+  - Overfitting marcato a tutte le scale; accuracy in validazione degrada da Small a Base
+  - Log in `results/vit_scaling_{scale}_{activation}_20260222*.json`
+
 ### Da Fare
 * **Nano-GPT** (TinyShakespeare): risultati preliminari nel paper (NOVA 1.6949 vs GELU 1.7344), script da aggiornare con confronto multi-attivazione.
 * **PINN Burgers 1D**: risultati preliminari nel paper (NOVA 0.00027 vs GELU 0.00353), script da aggiornare.
 * **DDPM Fashion-MNIST**: risultati preliminari nel paper (NOVA 0.0382 vs GELU 0.0372), script da aggiornare.
-* **Scaling ViT**: esperimenti a scala maggiore per verificare se il vantaggio NOVA si mantiene.
 
 ## **7\. Workflow per Nuovi Esperimenti**
 

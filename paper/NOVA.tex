@@ -25,7 +25,7 @@
 \maketitle
 
 \begin{abstract}
-La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
+La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Uno studio di scaling su tre varianti di ViT (3.2M--25.3M parametri) mostra un vantaggio crescente di NOVA su GELU (da $+2.28$ a $+4.07$ punti percentuali), sebbene l'overfitting marcato alla scala Base suggerisca la necessità di tecniche di regolarizzazione aggiuntive. Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
 \end{abstract}
 
 \tableofcontents
@@ -158,6 +158,48 @@ Mish           & 53.25\%            & $-1.42$        \\
 \end{tabular}
 \end{table}
 
+\subsection{Studio di Scaling (ViT su CIFAR-100)}
+
+Per verificare se il vantaggio di NOVA si mantenga all'aumentare della capacità del modello, abbiamo condotto uno studio di scaling con tre configurazioni di ViT di dimensione crescente, confrontando NOVA e GELU a 100 epoche su CIFAR-100. Ogni scala utilizza iperparametri calibrati per le GPU T4 (Tabella~\ref{tab:scaling}).
+
+\begin{table}[h]
+\centering
+\caption{Scaling study -- ViT su CIFAR-100 (NOVA vs GELU, run singola, seed 42, 100 epoche, FP16, 2$\times$T4).}
+\label{tab:scaling}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Scala} & \textbf{Config} & \textbf{Params} & \textbf{NOVA} & \textbf{GELU} & \textbf{$\Delta$} \\
+\midrule
+Tiny  & 4L, 256d, 4h & 3.2M  & \textbf{56.71\%} & 54.43\% & +2.28 \\
+Small & 6L, 384d, 6h & 10.7M & \textbf{59.37\%} & 55.48\% & +3.89 \\
+Base  & 8L, 512d, 8h & 25.3M & \textbf{55.22\%} & 51.15\% & +4.07 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+NOVA supera GELU in tutte e tre le scale, con un divario che cresce da $+2.28$ (Tiny) a $+4.07$ punti percentuali (Base). L'osservazione suggerisce che il meccanismo di auto-regolarizzazione geometrica di NOVA fornisca un vantaggio crescente con la capacità del modello.
+
+Tuttavia, i risultati rivelano un fenomeno di \textbf{overfitting marcato} a tutte le scale. La Tabella~\ref{tab:overfit} riporta il divario tra training accuracy e validation accuracy a fine addestramento.
+
+\begin{table}[h]
+\centering
+\caption{Overfitting gap (Train Acc $-$ Val Acc) a fine addestramento -- ViT Scaling.}
+\label{tab:overfit}
+\begin{tabular}{lcccccc}
+\toprule
+ & \multicolumn{3}{c}{\textbf{NOVA}} & \multicolumn{3}{c}{\textbf{GELU}} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+\textbf{Scala} & \textbf{Train} & \textbf{Val} & \textbf{Gap} & \textbf{Train} & \textbf{Val} & \textbf{Gap} \\
+\midrule
+Tiny  & 98.55\% & 56.24\% & 42.31 & 96.69\% & 54.41\% & 42.28 \\
+Small & 99.93\% & 59.33\% & 40.60 & 99.80\% & 55.41\% & 44.39 \\
+Base  & 99.96\% & 55.21\% & 44.75 & 99.86\% & 51.03\% & 48.83 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Alla scala Base, l'accuracy in validazione di entrambe le attivazioni scende al di sotto della scala Small (NOVA: $55.22\%$ vs $59.37\%$; GELU: $51.15\%$ vs $55.48\%$), indicando che l'aumento di capacità non viene sfruttato per generalizzare, ma per memorizzare il training set. Osserviamo che il gap di overfitting è sistematicamente inferiore per NOVA rispetto a GELU (specialmente a scala Small e Base), il che suggerisce un effetto di regolarizzazione implicita coerente con la struttura contrattiva della sacca non-monotona. Tuttavia, questo effetto non è sufficiente a prevenire il degrado prestazionale al crescere del modello su un dataset di dimensione limitata come CIFAR-100, e tecniche di regolarizzazione aggiuntive (dropout più aggressivo, data augmentation avanzata, o pre-training) saranno necessarie per future indagini su scala maggiore.
+
 \subsection{Modellazione Autoregressiva (Nano-GPT)}
 
 Abbiamo addestrato un Nano-GPT ($\approx$10M parametri) sul dataset TinyShakespeare per 1000 iterazioni. NOVA ha prodotto una Validation Loss di $1.6949$ rispetto a $1.7344$ di GELU. L'osservazione suggerisce che il meccanismo di gating potenziato di NOVA possa contribuire a mitigare la saturazione dimensionale nei blocchi Feed-Forward dei Transformer.
@@ -233,7 +275,7 @@ Il presente lavoro costituisce una \textit{Proof of Concept} e presenta le segue
 
 \begin{itemize}
   \item \textbf{Robustezza Statistica:} Tutti i risultati sperimentali derivano da run singole con singolo seed. La replicazione con seed multipli e test statistici formali è necessaria per validare i trend osservati.
-  \item \textbf{Scala:} Gli esperimenti sono stati condotti su architetture ridotte (Mini-ViT, Nano-GPT 10M, PINN 1D). Il comportamento di NOVA a scale LLM ($\geq$7B parametri) e su dataset di pre-training di grandi dimensioni rimane non verificato.
+  \item \textbf{Scala e Overfitting:} Lo studio di scaling su ViT (fino a 25.3M parametri) ha evidenziato un overfitting marcato a tutte le scale, con un degrado dell'accuracy in validazione alla scala Base rispetto a Small, sia per NOVA sia per GELU. Ciò indica che CIFAR-100, con 50K immagini di training, è insufficiente per modelli di questa capacità senza tecniche di regolarizzazione avanzate (CutMix, Mixup, RandAugment) o pre-training su dataset di scala maggiore. Il comportamento di NOVA a scale LLM ($\geq$7B parametri) rimane non verificato.
   \item \textbf{Stabilità di $\beta$:} Il parametro apprendibile $\beta$ mostra tendenze alla divergenza in assenza di adeguate strategie di \textit{learning rate warmup}. Un'analisi sistematica della sua dinamica di ottimizzazione è lasciata a lavori futuri.
   \item \textbf{Ambito PDE:} Il vantaggio nelle PINN è stato osservato su equazioni con singolarità (Burgers 1D). Su PDE paraboliche totalmente lisce (es. equazione del calore), i risultati preliminari suggeriscono prestazioni comparabili a GELU, non superiori.
 \end{itemize}
