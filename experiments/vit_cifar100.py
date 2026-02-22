@@ -520,10 +520,12 @@ def run_experiment(activation: str, gpu: int) -> None:
     scaler = GradScaler()
 
     # --- Log setup ---
-    results_dir = os.path.join(os.path.dirname(__file__), "..", "results")
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    results_dir = os.path.join(script_dir, "..", "results")
     os.makedirs(results_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = os.path.join(results_dir, f"{experiment_name}_{timestamp}.json")
+    log_path = os.path.abspath(
+        os.path.join(results_dir, f"{experiment_name}_{timestamp}.json"))
 
     log_data = {
         "esperimento": experiment_name,
@@ -592,6 +594,20 @@ def run_experiment(activation: str, gpu: int) -> None:
 
         log_data["epoche_log"].append(epoch_log)
 
+        # Salvataggio incrementale (ogni epoca) per non perdere dati su crash
+        log_data["metriche"] = {
+            "best_val_acc": round(best_val_acc, 2),
+            "final_val_acc": round(val_acc, 2),
+            "final_train_loss": round(train_loss, 4),
+            "final_val_loss": round(val_loss, 4),
+            "final_train_acc": round(train_acc, 2),
+        }
+        log_data["tempo_totale_sec"] = round(time.time() - start_time, 2)
+        with open(log_path, "w") as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+
         print(f"[Epoch {epoch+1:02d}/{EPOCHS}] "
               f"train_loss={train_loss:.4f}  train_acc={train_acc:.2f}%  "
               f"val_loss={val_loss:.4f}  val_acc={val_acc:.2f}%  "
@@ -600,19 +616,12 @@ def run_experiment(activation: str, gpu: int) -> None:
 
     elapsed = time.time() - start_time
 
-    # --- Metriche finali ---
-    log_data["metriche"] = {
-        "best_val_acc": round(best_val_acc, 2),
-        "final_val_acc": round(val_acc, 2),
-        "final_train_loss": round(train_loss, 4),
-        "final_val_loss": round(val_loss, 4),
-        "final_train_acc": round(train_acc, 2),
-    }
+    # --- Salvataggio finale definitivo ---
     log_data["tempo_totale_sec"] = round(elapsed, 2)
-
-    # --- Salvataggio ---
     with open(log_path, "w") as f:
         json.dump(log_data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
 
     print(f"\n{'='*60}")
     print(f"  RISULTATI — {activation.upper()}")
@@ -621,6 +630,10 @@ def run_experiment(activation: str, gpu: int) -> None:
     print(f"  Tempo totale: {elapsed:.1f}s")
     print(f"  Log: {log_path}")
     print(f"{'='*60}\n")
+
+    # --- Cleanup VRAM ---
+    del model, optimizer, scaler, scheduler, criterion
+    torch.cuda.empty_cache()
 
 
 # ==============================================================
