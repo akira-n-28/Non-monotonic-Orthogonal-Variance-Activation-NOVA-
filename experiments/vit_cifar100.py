@@ -55,6 +55,30 @@ DROPOUT = 0.1
 NUM_CLASSES = 100
 IMG_SIZE = 32
 
+
+def _is_kaggle():
+    return bool(os.environ.get("KAGGLE_KERNEL_RUN_TYPE"))
+
+
+def _get_results_dir():
+    """Ritorna la cartella results/, compatibile con Kaggle e locale."""
+    if _is_kaggle():
+        d = "/kaggle/working/results"
+    else:
+        script_dir = os.path.abspath(os.path.dirname(__file__))
+        d = os.path.join(script_dir, "..", "results")
+    os.makedirs(d, exist_ok=True)
+    return os.path.abspath(d)
+
+
+def _get_data_root():
+    """Ritorna la cartella data/, compatibile con Kaggle e locale."""
+    if _is_kaggle():
+        return "/kaggle/working/data"
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(script_dir, "..", "data")
+
+
 # ==============================================================
 # RIPRODUCIBILITA'
 # ==============================================================
@@ -376,7 +400,7 @@ def get_cifar100_loaders(batch_size, num_workers):
         transforms.Normalize(mean, std),
     ])
 
-    data_root = os.path.join(os.path.dirname(__file__), "..", "data")
+    data_root = _get_data_root()
     train_set = torchvision.datasets.CIFAR100(
         root=data_root, train=True, download=True, transform=train_transform)
     test_set = torchvision.datasets.CIFAR100(
@@ -520,12 +544,9 @@ def run_experiment(activation: str, gpu: int) -> None:
     scaler = GradScaler()
 
     # --- Log setup ---
-    script_dir = os.path.abspath(os.path.dirname(__file__))
-    results_dir = os.path.join(script_dir, "..", "results")
-    os.makedirs(results_dir, exist_ok=True)
+    results_dir = _get_results_dir()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = os.path.abspath(
-        os.path.join(results_dir, f"{experiment_name}_{timestamp}.json"))
+    log_path = os.path.join(results_dir, f"{experiment_name}_{timestamp}.json")
 
     log_data = {
         "esperimento": experiment_name,
@@ -649,7 +670,7 @@ def launch_all():
 
     # 1. Pre-download dataset (evita race condition tra sottoprocessi)
     print("[LAUNCHER] Pre-download dataset CIFAR-100...")
-    data_root = os.path.join(os.path.dirname(__file__), "..", "data")
+    data_root = _get_data_root()
     torchvision.datasets.CIFAR100(root=data_root, train=True, download=True)
     torchvision.datasets.CIFAR100(root=data_root, train=False, download=True)
     print("[LAUNCHER] Dataset pronto.")
