@@ -38,12 +38,12 @@ import torchvision.transforms as transforms
 SEED = 42
 DATASET = "CIFAR-100"
 HARDWARE = "NVIDIA T4"
-EPOCHS = 20
-BATCH_SIZE = 128
-LR = 1e-3
+EPOCHS = 100
+BATCH_SIZE = 1024
+LR = 3e-3
 WEIGHT_DECAY = 0.05
-WARMUP_EPOCHS = 2
-NUM_WORKERS = 2
+WARMUP_EPOCHS = 10
+NUM_WORKERS = 4
 
 # Architettura Mini-ViT
 PATCH_SIZE = 4
@@ -490,6 +490,12 @@ def run_experiment(activation: str, gpu: int) -> None:
         print(f"[INFO] NOVA backend: {nova_backend}")
     elif activation == "gelu":
         act_layer = nn.GELU()
+    elif activation == "silu":
+        act_layer = nn.SiLU()
+    elif activation == "mish":
+        act_layer = nn.Mish()
+    elif activation == "relu":
+        act_layer = nn.ReLU()
     else:
         raise ValueError(f"Attivazione non supportata: {activation}")
 
@@ -621,22 +627,50 @@ def run_experiment(activation: str, gpu: int) -> None:
 # LAUNCHER: parallelo su 2 GPU
 # ==============================================================
 
-def launch_both():
-    """Lancia NOVA (GPU 0) e GELU (GPU 1) in parallelo come sottoprocessi."""
-    script = os.path.abspath(__file__)
-    procs = []
-    for act, gpu in [("nova", 0), ("gelu", 1)]:
-        cmd = [sys.executable, script, "--activation", act, "--gpu", str(gpu)]
-        print(f"[LAUNCHER] Avvio: {' '.join(cmd)}")
-        p = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
-        procs.append((act, p))
+ALL_ACTIVATIONS = ["nova", "gelu", "silu", "mish", "relu"]
 
-    for act, p in procs:
-        p.wait()
-        if p.returncode != 0:
-            print(f"[LAUNCHER] ERRORE: {act} terminato con codice {p.returncode}")
-        else:
-            print(f"[LAUNCHER] {act.upper()} completato con successo.")
+
+def launch_all():
+    """Lancia tutte le attivazioni in parallelo (2 alla volta sulle 2 GPU)."""
+    global _nova_cuda_ext
+
+    # 1. Pre-download dataset (evita race condition tra sottoprocessi)
+    print("[LAUNCHER] Pre-download dataset CIFAR-100...")
+    data_root = os.path.join(os.path.dirname(__file__), "..", "data")
+    torchvision.datasets.CIFAR100(root=data_root, train=True, download=True)
+    torchvision.datasets.CIFAR100(root=data_root, train=False, download=True)
+    print("[LAUNCHER] Dataset pronto.")
+
+    # 2. Pre-compilazione kernel CUDA (cachato per i sottoprocessi)
+    print("[LAUNCHER] Pre-compilazione kernel CUDA NOVA (30-60s)...")
+    try:
+        _nova_cuda_ext = _compile_nova_cuda()
+        print("[LAUNCHER] Kernel CUDA compilato e cachato.")
+    except Exception as e:
+        print(f"[LAUNCHER] ATTENZIONE: Compilazione CUDA fallita: {e}")
+        print("[LAUNCHER] NOVA userà il fallback Python puro.")
+
+    # 3. Lancia a coppie sulle 2 GPU
+    script = os.path.abspath(__file__)
+    pairs = [(ALL_ACTIVATIONS[i], ALL_ACTIVATIONS[i + 1] if i + 1 < len(ALL_ACTIVATIONS) else None)
+             for i in range(0, len(ALL_ACTIVATIONS), 2)]
+
+    for pair in pairs:
+        procs = []
+        for gpu, act in enumerate(pair):
+            if act is None:
+                continue
+            cmd = [sys.executable, script, "--activation", act, "--gpu", str(gpu)]
+            print(f"\n[LAUNCHER] Avvio: {' '.join(cmd)}")
+            p = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+            procs.append((act, p))
+
+        for act, p in procs:
+            p.wait()
+            if p.returncode != 0:
+                print(f"[LAUNCHER] ERRORE: {act} terminato con codice {p.returncode}")
+            else:
+                print(f"[LAUNCHER] {act.upper()} completato con successo.")
 
 
 # ==============================================================
@@ -644,9 +678,10 @@ def launch_both():
 # ==============================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mini-ViT CIFAR-100: NOVA vs GELU")
-    parser.add_argument("--activation", type=str, choices=["nova", "gelu"],
-                        help="Funzione di attivazione (ometti per lanciare entrambi)")
+    parser = argparse.ArgumentParser(description="Mini-ViT CIFAR-100: NOVA vs GELU/SiLU/Mish/ReLU")
+    parser.add_argument("--activation", type=str,
+                        choices=["nova", "gelu", "silu", "mish", "relu"],
+                        help="Funzione di attivazione (ometti per lanciare tutti)")
     parser.add_argument("--gpu", type=int, default=0,
                         help="ID della GPU (default: 0)")
     args = parser.parse_args()
@@ -658,6 +693,6 @@ if __name__ == "__main__":
             print(f"[ATTENZIONE] Solo {n_gpus} GPU disponibili. "
                   "Lancia manualmente con --activation e --gpu.")
             sys.exit(1)
-        launch_both()
+        launch_all()
     else:
         run_experiment(args.activation, args.gpu)
