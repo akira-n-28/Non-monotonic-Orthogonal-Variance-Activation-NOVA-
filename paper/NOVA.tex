@@ -18,14 +18,14 @@
 \title{\textbf{NOVA: Non-monotonic Orthogonal Variance Activation\\per Architetture Neurali Profonde}\\[0.5em]
 \large\textit{Preprint --- Work in Progress}}
 \author{Autore\\[0.3em]\textit{Laboratorio di AI e Matematica Applicata}}
-\date{21 febbraio 2026}
+\date{22 febbraio 2026}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. Attraverso esperimenti esplorativi a run singola su architetture basate su LayerNorm (Mini-ViT, Nano-GPT), osserviamo trend qualitativi incoraggianti rispetto alla baseline GELU. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
+La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
 \end{abstract}
 
 \tableofcontents
@@ -106,6 +106,7 @@ NOVA si colloca in un ecosistema dove si cerca il bilanciamento tra levigatezza 
 ReLU      & $\max(0,x)$      & Sì & No  & Nulla       & $1.0\times$ \\
 GELU \cite{hendrycks2016gaussian} & $x\Phi(x)$ & No & Sì & Esponenziale & $2.5\times$ \\
 SiLU/Swish \cite{ramachandran2017searching} & $x\sigma(x)$ & No & Sì & Esponenziale & $2.2\times$ \\
+Mish \cite{misra2019mish}      & $x\tanh(\mathrm{softplus}(x))$ & No & Sì & Esponenziale & $2.4\times$ \\
 Snake \cite{ziyin2020neural}   & $x + \sin^2(x)$  & No & Sì & Periodica   & $4.0\times$ \\
 NOVA      & Eq.~\eqref{eq:nova} & No & Sì & Polinomiale & $2.8\times$ \\
 \bottomrule
@@ -134,21 +135,25 @@ Dal punto di vista teorico, il comportamento di NOVA può essere disaccoppiato i
 
 Tutti gli esperimenti riportati in questa sezione sono \textbf{indagini a run singola (singolo seed)}, condotte per valutare trend di convergenza e formare ipotesi preliminari. Studi futuri con replicazione statistica saranno necessari per trarre conclusioni definitive.
 
-\subsection{Classificazione Visiva (Mini-ViT su CIFAR-10)}
+\subsection{Classificazione Visiva (Mini-ViT su CIFAR-100)}
 
-Abbiamo addestrato da zero un Mini-ViT su CIFAR-10 per 10 epoche con Data Augmentation e Layer Normalization. NOVA ha raggiunto una Test Accuracy del $68.31\%$ contro il $67.54\%$ di GELU. Il margine ridotto è compatibile con l'assenza di replicazione statistica; il risultato è riportato come osservazione qualitativa, suggerendo che NOVA non penalizzi la convergenza rispetto a GELU in architetture LayerNorm.
+Abbiamo addestrato da zero un Mini-ViT (4 layer, embed\_dim=256, 4 heads, MLP$\times$4) su CIFAR-100 per 100 epoche con Data Augmentation, Label Smoothing (0.1), Mixed Precision (FP16) e LayerNorm. L'addestramento è stato effettuato con AdamW (lr=$3\!\times\!10^{-3}$, weight\_decay=$0.05$), warmup lineare (10 epoche) seguito da cosine annealing, su 2$\times$ GPU NVIDIA T4 (Kaggle). I risultati (Tabella~\ref{tab:vit}) confrontano cinque funzioni di attivazione.
+
+NOVA raggiunge una Best Test Accuracy del $56.75\%$, superando GELU di $+2.08$ punti percentuali. Il margine è consistente anche rispetto a ReLU, SiLU e Mish. Pur essendo una run singola, un divario di oltre 2 punti su CIFAR-100 a 100 epoche suggerisce che il meccanismo di auto-regolarizzazione geometrica di NOVA fornisca un vantaggio qualitativo in architetture LayerNorm-based rispetto alle attivazioni puramente esponenziali.
 
 \begin{table}[h]
 \centering
-\caption{Test Accuracy -- Mini-ViT su CIFAR-10 (run singola, 10 epoche).}
+\caption{Best Test Accuracy -- Mini-ViT su CIFAR-100 (run singola, seed 42, 100 epoche, FP16).}
 \label{tab:vit}
 \begin{tabular}{lcc}
 \toprule
-\textbf{Epoca} & \textbf{NOVA} & \textbf{GELU} \\
+\textbf{Attivazione} & \textbf{Best Val Acc} & \textbf{$\Delta$ vs GELU} \\
 \midrule
-1  & 47.27\% & 46.97\% \\
-5  & 60.62\% & 59.18\% \\
-10 & 68.31\% & 67.54\% \\
+\textbf{NOVA} & \textbf{56.75\%} & \textbf{+2.08} \\
+GELU           & 54.67\%            & ---            \\
+ReLU           & 54.55\%            & $-0.12$        \\
+SiLU           & 53.84\%            & $-0.83$        \\
+Mish           & 53.25\%            & $-1.42$        \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -259,6 +264,11 @@ Gaussian error linear units (GELUs).
 Ramachandran, P., Zoph, B., \& Le, Q.\,V. (2017).
 Searching for activation functions.
 \textit{arXiv preprint arXiv:1710.05941}.
+
+\bibitem{misra2019mish}
+Misra, D. (2019).
+Mish: A self regularized non-monotonic activation function.
+\textit{arXiv preprint arXiv:1908.08681}.
 
 \bibitem{ziyin2020neural}
 Ziyin, L., Hartwig, T., \& Ueda, M. (2020).

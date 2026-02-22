@@ -10,14 +10,27 @@ NOVA è una funzione di attivazione ibrida (razionale-esponenziale) sperimentale
 
 ## **Risultati Preliminari (Esplorativi)**
 
-**⚠️ ATTENZIONE:** Tutti i risultati attuali sono basati su **singole run con singolo seed**, eseguiti su una singola GPU **NVIDIA T4**. Rappresentano trend qualitativi e non evidenze statisticamente definitive.
+**⚠️ ATTENZIONE:** Tutti i risultati attuali sono basati su **singole run con singolo seed (42)**, eseguiti su GPU **NVIDIA T4** (Kaggle). Rappresentano trend qualitativi e non evidenze statisticamente definitive.
 
-* **Vision Transformers (ViT-Mini su CIFAR-10, 10 epoche):** \* NOVA: 68.31% | GELU: 67.54%  
-* **LLM Autoregressivo (Nano-GPT su TinyShakespeare, 1000 iter, Val Loss):**  
-  * NOVA: 1.6949 | GELU: 1.7344  
-* **Scientific ML / PINN (Equazione di Burgers 1D, PDE Residual Loss):**  
-  * NOVA: 0.00027 | GELU: 0.00353 *(Riduzione dell'errore di un fattore \~13x)*  
-* **Modelli di Diffusione (U-Net DDPM su Fashion-MNIST, Denoising Loss):**  
+### Vision Transformers (Mini-ViT su CIFAR-100, 100 epoche, FP16)
+
+| Attivazione | Best Val Acc | Δ vs GELU |
+|-------------|-------------|-----------|
+| **NOVA**    | **56.75%**  | **+2.08** |
+| GELU        | 54.67%      | ---       |
+| ReLU        | 54.55%      | −0.12     |
+| SiLU        | 53.84%      | −0.83     |
+| Mish        | 53.25%      | −1.42     |
+
+*Config: AdamW (lr=3e-3, wd=0.05), warmup 10 ep + cosine, batch 1024, label smoothing 0.1, 2×T4.*
+
+### Altri Esperimenti Preliminari
+
+* **LLM Autoregressivo (Nano-GPT su TinyShakespeare, 1000 iter, Val Loss):**
+  * NOVA: 1.6949 | GELU: 1.7344
+* **Scientific ML / PINN (Equazione di Burgers 1D, PDE Residual Loss):**
+  * NOVA: 0.00027 | GELU: 0.00353 *(Riduzione dell'errore di un fattore ~13x)*
+* **Modelli di Diffusione (U-Net DDPM su Fashion-MNIST, Denoising Loss):**
   * NOVA: 0.0382 | GELU: 0.0372 *(GELU mantiene prestazioni superiori)*
 
 ## **Limitazioni e Bug Noti**
@@ -27,7 +40,7 @@ L'integrità scientifica richiede di evidenziare i limiti attuali del nostro lav
 * **Nessuna replicazione statistica:** Gli intervalli di confidenza saranno affrontati in lavori futuri con ![][image2] run.  
 * **Scala ridotta:** Gli esperimenti testano architetture piccole su dataset contenuti; la validazione su LLM/ViT massicci è pending.  
 * **Instabilità di β:** Se lasciato come parametro apprendibile senza un attento warmup dell'ottimizzatore, ![][image3] tende a divergere. Attualmente è fissato a 1.0 in gran parte dei benchmark.  
-* **Limiti Kernel CUDA:** La fusione C++ velocizza il training ma attualmente non calcola il gradiente per ![][image3] nel backward pass e non è ottimizzata per BF16.  
+* **Limiti Kernel CUDA:** La fusione C++ velocizza il training e calcola il gradiente sia per x che per β, ma non è ancora ottimizzata per BF16.  
 * **Smoothness Trade-off:** NOVA soffre marginalmente rispetto a GELU nei Modelli di Diffusione (DDPM) a causa dell'effetto delle micro-fluttuazioni nell'integrazione di campi vettoriali puri.
 
 ## **Installazione e Uso**
