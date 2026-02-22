@@ -62,6 +62,11 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Plot in `results/plot_v2_*.png`
 
 ### Da Fare
+* **Scaling ViT v3 — Regolarizzazione Calibrata** (`experiments/vit_scaling_v3.py`): Corregge il sotto-adattamento Tiny di v2 calibrando la regolarizzazione per scala.
+  - Tiny: RandAugment mag 5 (era 9), CutMix/Mixup prob 0.5 (era 1.0), DropPath 0.05 (era 0.1)
+  - Small/Base: invariati rispetto a v2
+  - Plot con confronto v1/v2/v3
+  - Uso: `python vit_scaling_v3.py` (full run) oppure `python vit_scaling_v3.py --plot-only`
 * **Nano-GPT** (TinyShakespeare): risultati preliminari nel paper (NOVA 1.6949 vs GELU 1.7344), script da aggiornare con confronto multi-attivazione.
 * **PINN Burgers 1D**: risultati preliminari nel paper (NOVA 0.00027 vs GELU 0.00353), script da aggiornare.
 * **DDPM Fashion-MNIST**: risultati preliminari nel paper (NOVA 0.0382 vs GELU 0.0372), script da aggiornare.
