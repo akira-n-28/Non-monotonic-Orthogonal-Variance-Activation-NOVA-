@@ -75,6 +75,8 @@ def _get_data_root():
     return os.path.join(script_dir, "..", "data")
 
 
+MAX_GRAD_NORM = 1.0
+
 SCALING_CONFIGS = {
     "tiny": {
         "embed_dim": 256,
@@ -90,18 +92,18 @@ SCALING_CONFIGS = {
         "num_heads": 6,
         "num_layers": 6,
         "batch_size": 512,
-        "lr": 2e-3,
+        "lr": 1e-3,
         "epochs": 100,
-        "warmup_epochs": 10,
+        "warmup_epochs": 15,
     },
     "base": {
         "embed_dim": 512,
         "num_heads": 8,
         "num_layers": 8,
         "batch_size": 256,
-        "lr": 1e-3,
+        "lr": 5e-4,
         "epochs": 100,
-        "warmup_epochs": 10,
+        "warmup_epochs": 20,
     },
 }
 
@@ -455,6 +457,8 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device):
             loss = criterion(outputs, labels)
 
         scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
         scaler.step(optimizer)
         scaler.update()
 
