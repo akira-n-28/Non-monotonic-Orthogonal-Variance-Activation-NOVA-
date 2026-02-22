@@ -1,0 +1,29 @@
+{
+  "esperimento": "vit_cifar100_mish",
+  "data": "2026-02-22",
+  "hardware": "NVIDIA T4 (×2, Kaggle)",
+  "seed": 42,
+  "dataset": "CIFAR-100",
+  "modello": "Mini-ViT (4L, 256d, 4h, MLP×4) + Mish",
+  "obiettivo": "Test accuracy a 100 epoche, confronto multi-attivazione",
+  "configurazione": {
+    "epochs": 100,
+    "batch_size": 1024,
+    "lr": 3e-3,
+    "weight_decay": 0.05,
+    "warmup_epochs": 10,
+    "num_workers": 4,
+    "patch_size": 4,
+    "embed_dim": 256,
+    "num_heads": 4,
+    "num_layers": 4,
+    "mlp_ratio": 4,
+    "dropout": 0.1,
+    "label_smoothing": 0.1,
+    "mixed_precision": "fp16"
+  },
+  "metriche": {
+    "best_val_acc": 53.25,
+    "final_val_acc": 53.19
+  }
+}

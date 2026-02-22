@@ -1,17 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-ESPERIMENTO: Mini-ViT su CIFAR-100
-===================================
-NOVA vs GELU — Mixed Precision (FP16/FP32) su 2× NVIDIA T4
+ESPERIMENTO: Scaling del Vision Transformer su CIFAR-100
+=========================================================
+NOVA vs GELU a scale crescenti (Tiny / Small / Base).
+Mixed Precision (FP16/FP32) su 2× NVIDIA T4.
 
 Uso:
-    # Lancia entrambi gli esperimenti in parallelo su 2 GPU:
-    python vit_cifar100.py
+    # Lancia tutto automaticamente (tutte le scale, NOVA vs GELU su 2 GPU):
+    python vit_scaling.py
 
-    # Lancia un singolo esperimento:
-    python vit_cifar100.py --activation nova --gpu 0
-    python vit_cifar100.py --activation gelu --gpu 1
+    # Singolo esperimento:
+    python vit_scaling.py --scale tiny --activation nova --gpu 0
+
+    # Tutte le scale per una singola attivazione:
+    python vit_scaling.py --activation nova --gpu 0
 """
 
 import argparse
@@ -20,7 +23,6 @@ import sys
 import os
 import time
 import json
-import math
 import random
 from datetime import datetime
 
@@ -38,24 +40,18 @@ import torchvision.transforms as transforms
 SEED = 42
 DATASET = "CIFAR-100"
 HARDWARE = "NVIDIA T4"
-EPOCHS = 100
-BATCH_SIZE = 1024
-LR = 3e-3
-WEIGHT_DECAY = 0.05
-WARMUP_EPOCHS = 10
 NUM_WORKERS = 4
-
-# Architettura Mini-ViT
 PATCH_SIZE = 4
-EMBED_DIM = 256
-NUM_HEADS = 4
-NUM_LAYERS = 4
 MLP_RATIO = 4
 DROPOUT = 0.1
 NUM_CLASSES = 100
 IMG_SIZE = 32
+WEIGHT_DECAY = 0.05
+LABEL_SMOOTHING = 0.1
 
-
+# --- Configurazioni di scaling ---
+# Batch size ridotto per modelli più grandi (vincolo VRAM 16GB T4)
+# LR scalato con sqrt(batch_size/1024) per stabilità
 def _is_kaggle():
     return bool(os.environ.get("KAGGLE_KERNEL_RUN_TYPE"))
 
@@ -79,11 +75,42 @@ def _get_data_root():
     return os.path.join(script_dir, "..", "data")
 
 
+SCALING_CONFIGS = {
+    "tiny": {
+        "embed_dim": 256,
+        "num_heads": 4,
+        "num_layers": 4,
+        "batch_size": 1024,
+        "lr": 3e-3,
+        "epochs": 100,
+        "warmup_epochs": 10,
+    },
+    "small": {
+        "embed_dim": 384,
+        "num_heads": 6,
+        "num_layers": 6,
+        "batch_size": 512,
+        "lr": 2e-3,
+        "epochs": 100,
+        "warmup_epochs": 10,
+    },
+    "base": {
+        "embed_dim": 512,
+        "num_heads": 8,
+        "num_layers": 8,
+        "batch_size": 256,
+        "lr": 1e-3,
+        "epochs": 100,
+        "warmup_epochs": 10,
+    },
+}
+
+ALL_ACTIVATIONS = ["nova", "gelu"]
+
 # ==============================================================
 # RIPRODUCIBILITA'
 # ==============================================================
 def set_seed(seed: int) -> None:
-    """Fissa tutti i seed per riproducibilità."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -96,11 +123,9 @@ def set_seed(seed: int) -> None:
 # NOVA: KERNEL CUDA + FALLBACK PYTHON
 # ==============================================================
 
-# --- Kernel CUDA (compilazione JIT) ---
 _nova_cuda_ext = None
 
 def _compile_nova_cuda():
-    """Compila il kernel CUDA fuso per NOVA. Ritorna None se fallisce."""
     from torch.utils.cpp_extension import load_inline
 
     cpp_source = """
@@ -197,7 +222,7 @@ def _compile_nova_cuda():
     }
     """
 
-    nova_ext = load_inline(
+    return load_inline(
         name='nova_cuda_ext',
         cpp_sources=cpp_source,
         cuda_sources=cuda_source,
@@ -206,11 +231,9 @@ def _compile_nova_cuda():
         extra_cflags=['-O3'],
         extra_cuda_cflags=['-O3', '--use_fast_math'],
     )
-    return nova_ext
 
 
 class _NOVAFunction(torch.autograd.Function):
-    """Autograd wrapper per il kernel CUDA fuso."""
     @staticmethod
     def forward(ctx, x, beta, nova_ext):
         x = x.contiguous()
@@ -230,7 +253,6 @@ class _NOVAFunction(torch.autograd.Function):
 
 
 class NOVACuda(nn.Module):
-    """NOVA con kernel CUDA fuso. β apprendibile."""
     def __init__(self, nova_ext, beta=1.0):
         super().__init__()
         self.beta = nn.Parameter(torch.tensor(float(beta)))
@@ -241,7 +263,6 @@ class NOVACuda(nn.Module):
 
 
 class NOVAPython(nn.Module):
-    """NOVA in Python puro (fallback). β apprendibile, gradiente via autograd."""
     def __init__(self, beta=1.0):
         super().__init__()
         self.beta = nn.Parameter(torch.tensor(float(beta)))
@@ -252,7 +273,6 @@ class NOVAPython(nn.Module):
 
 
 def make_nova(beta=1.0):
-    """Crea un'istanza NOVA: preferisce CUDA, fallback Python."""
     global _nova_cuda_ext
     if _nova_cuda_ext is None and torch.cuda.is_available():
         try:
@@ -268,7 +288,7 @@ def make_nova(beta=1.0):
 
 
 # ==============================================================
-# MODELLO: Mini Vision Transformer
+# MODELLO: Vision Transformer (parametrizzato per scaling)
 # ==============================================================
 
 class PatchEmbedding(nn.Module):
@@ -281,7 +301,6 @@ class PatchEmbedding(nn.Module):
         )
 
     def forward(self, x):
-        # (B, C, H, W) -> (B, num_patches, embed_dim)
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x
 
@@ -332,7 +351,7 @@ class TransformerBlock(nn.Module):
         return x
 
 
-class MiniViT(nn.Module):
+class ScalableViT(nn.Module):
     def __init__(self, img_size, patch_size, in_channels, num_classes,
                  embed_dim, num_heads, num_layers, mlp_ratio, dropout,
                  act_layer):
@@ -470,10 +489,6 @@ def evaluate(model, loader, criterion, device):
     return running_loss / total, 100.0 * correct / total
 
 
-# ==============================================================
-# LR SCHEDULER: Linear Warmup + Cosine Decay
-# ==============================================================
-
 def build_scheduler(optimizer, warmup_epochs, total_epochs):
     warmup = torch.optim.lr_scheduler.LinearLR(
         optimizer, start_factor=1e-3, end_factor=1.0,
@@ -488,21 +503,31 @@ def build_scheduler(optimizer, warmup_epochs, total_epochs):
 # ESPERIMENTO PRINCIPALE
 # ==============================================================
 
-def run_experiment(activation: str, gpu: int) -> None:
+def run_experiment(scale: str, activation: str, gpu: int) -> None:
     set_seed(SEED)
 
+    cfg = SCALING_CONFIGS[scale]
     device = torch.device(f"cuda:{gpu}")
     torch.cuda.set_device(device)
 
-    experiment_name = f"vit_cifar100_{activation}"
-    model_desc = (f"Mini-ViT ({NUM_LAYERS}L, {EMBED_DIM}d, {NUM_HEADS}h, "
-                  f"MLP×{MLP_RATIO}) + {activation.upper()}")
+    embed_dim = cfg["embed_dim"]
+    num_heads = cfg["num_heads"]
+    num_layers = cfg["num_layers"]
+    batch_size = cfg["batch_size"]
+    lr = cfg["lr"]
+    epochs = cfg["epochs"]
+    warmup_epochs = cfg["warmup_epochs"]
+
+    experiment_name = f"vit_scaling_{scale}_{activation}"
+    model_desc = (f"ViT-{scale.capitalize()} ({num_layers}L, {embed_dim}d, "
+                  f"{num_heads}h, MLP×{MLP_RATIO}) + {activation.upper()}")
 
     print(f"\n{'='*60}")
     print(f"  ESPERIMENTO: {experiment_name}")
     print(f"  GPU: {gpu} ({torch.cuda.get_device_name(device)})")
-    print(f"  Attivazione: {activation.upper()}")
-    print(f"  Epoche: {EPOCHS}, Batch: {BATCH_SIZE}, LR: {LR}")
+    print(f"  Scala: {scale.upper()} | Attivazione: {activation.upper()}")
+    print(f"  Architettura: {num_layers}L, {embed_dim}d, {num_heads}h")
+    print(f"  Epoche: {epochs}, Batch: {batch_size}, LR: {lr}")
     print(f"  Mixed Precision: FP16 (calcoli critici in FP32)")
     print(f"  Seed: {SEED}")
     print(f"{'='*60}\n")
@@ -524,10 +549,10 @@ def run_experiment(activation: str, gpu: int) -> None:
         raise ValueError(f"Attivazione non supportata: {activation}")
 
     # --- Modello ---
-    model = MiniViT(
+    model = ScalableViT(
         img_size=IMG_SIZE, patch_size=PATCH_SIZE, in_channels=3,
-        num_classes=NUM_CLASSES, embed_dim=EMBED_DIM, num_heads=NUM_HEADS,
-        num_layers=NUM_LAYERS, mlp_ratio=MLP_RATIO, dropout=DROPOUT,
+        num_classes=NUM_CLASSES, embed_dim=embed_dim, num_heads=num_heads,
+        num_layers=num_layers, mlp_ratio=MLP_RATIO, dropout=DROPOUT,
         act_layer=act_layer,
     ).to(device)
 
@@ -535,12 +560,12 @@ def run_experiment(activation: str, gpu: int) -> None:
     print(f"[INFO] Parametri totali: {num_params:,}")
 
     # --- Dati ---
-    train_loader, test_loader = get_cifar100_loaders(BATCH_SIZE, NUM_WORKERS)
+    train_loader, test_loader = get_cifar100_loaders(batch_size, NUM_WORKERS)
 
     # --- Ottimizzatore, Loss, Scheduler ---
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = build_scheduler(optimizer, WARMUP_EPOCHS, EPOCHS)
+    criterion = nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=WEIGHT_DECAY)
+    scheduler = build_scheduler(optimizer, warmup_epochs, epochs)
     scaler = GradScaler()
 
     # --- Log setup ---
@@ -555,20 +580,21 @@ def run_experiment(activation: str, gpu: int) -> None:
         "seed": SEED,
         "dataset": DATASET,
         "modello": model_desc,
-        "obiettivo": f"Test accuracy a {EPOCHS} epoche, confronto NOVA vs GELU",
+        "obiettivo": f"Scaling study: {scale} ViT, {activation} vs baseline a {epochs} epoche",
         "configurazione": {
-            "epochs": EPOCHS,
-            "batch_size": BATCH_SIZE,
-            "lr": LR,
+            "scale": scale,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "lr": lr,
             "weight_decay": WEIGHT_DECAY,
-            "warmup_epochs": WARMUP_EPOCHS,
+            "warmup_epochs": warmup_epochs,
             "patch_size": PATCH_SIZE,
-            "embed_dim": EMBED_DIM,
-            "num_heads": NUM_HEADS,
-            "num_layers": NUM_LAYERS,
+            "embed_dim": embed_dim,
+            "num_heads": num_heads,
+            "num_layers": num_layers,
             "mlp_ratio": MLP_RATIO,
             "dropout": DROPOUT,
-            "label_smoothing": 0.1,
+            "label_smoothing": LABEL_SMOOTHING,
             "mixed_precision": "fp16",
             "num_params": num_params,
         },
@@ -583,7 +609,7 @@ def run_experiment(activation: str, gpu: int) -> None:
     best_val_acc = 0.0
     start_time = time.time()
 
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         epoch_start = time.time()
 
         train_loss, train_acc = train_one_epoch(
@@ -606,7 +632,6 @@ def run_experiment(activation: str, gpu: int) -> None:
             "lr": round(current_lr, 8),
             "epoch_time_sec": round(epoch_time, 1),
         }
-        # Logga beta per NOVA
         if activation == "nova":
             for m in model.modules():
                 if isinstance(m, (NOVACuda, NOVAPython)):
@@ -629,7 +654,8 @@ def run_experiment(activation: str, gpu: int) -> None:
             f.flush()
             os.fsync(f.fileno())
 
-        print(f"[Epoch {epoch+1:02d}/{EPOCHS}] "
+        print(f"[{scale.upper()}/{activation.upper()}] "
+              f"Epoch {epoch+1:03d}/{epochs}  "
               f"train_loss={train_loss:.4f}  train_acc={train_acc:.2f}%  "
               f"val_loss={val_loss:.4f}  val_acc={val_acc:.2f}%  "
               f"lr={current_lr:.6f}  ({epoch_time:.1f}s)"
@@ -637,7 +663,7 @@ def run_experiment(activation: str, gpu: int) -> None:
 
     elapsed = time.time() - start_time
 
-    # --- Salvataggio finale definitivo ---
+    # --- Metriche finali (aggiornamento definitivo) ---
     log_data["tempo_totale_sec"] = round(elapsed, 2)
     with open(log_path, "w") as f:
         json.dump(log_data, f, indent=2, ensure_ascii=False)
@@ -645,66 +671,93 @@ def run_experiment(activation: str, gpu: int) -> None:
         os.fsync(f.fileno())
 
     print(f"\n{'='*60}")
-    print(f"  RISULTATI — {activation.upper()}")
+    print(f"  RISULTATI — {scale.upper()} / {activation.upper()}")
+    print(f"  Parametri: {num_params:,}")
     print(f"  Best val acc: {best_val_acc:.2f}%")
     print(f"  Final val acc: {val_acc:.2f}%")
     print(f"  Tempo totale: {elapsed:.1f}s")
     print(f"  Log: {log_path}")
     print(f"{'='*60}\n")
 
-    # --- Cleanup VRAM ---
+    # --- Cleanup VRAM (critico per run sequenziali multi-scala) ---
     del model, optimizer, scaler, scheduler, criterion
+    del train_loader, test_loader
     torch.cuda.empty_cache()
+    print(f"[{scale.upper()}/{activation.upper()}] VRAM liberata.")
 
 
 # ==============================================================
-# LAUNCHER: parallelo su 2 GPU
+# LAUNCHER: parallelo su 2 GPU, per scala
 # ==============================================================
 
-ALL_ACTIVATIONS = ["nova", "gelu", "silu", "mish", "relu"]
-
-
-def launch_all():
-    """Lancia tutte le attivazioni in parallelo (2 alla volta sulle 2 GPU)."""
+def launch_all(scales=None, activations=None):
+    """Lancia NOVA (GPU 0) e GELU (GPU 1) per ogni scala, in sequenza."""
     global _nova_cuda_ext
 
-    # 1. Pre-download dataset (evita race condition tra sottoprocessi)
+    if scales is None:
+        scales = list(SCALING_CONFIGS.keys())
+    if activations is None:
+        activations = ALL_ACTIVATIONS
+
+    # 1. Pre-download dataset
     print("[LAUNCHER] Pre-download dataset CIFAR-100...")
     data_root = _get_data_root()
     torchvision.datasets.CIFAR100(root=data_root, train=True, download=True)
     torchvision.datasets.CIFAR100(root=data_root, train=False, download=True)
     print("[LAUNCHER] Dataset pronto.")
 
-    # 2. Pre-compilazione kernel CUDA (cachato per i sottoprocessi)
-    print("[LAUNCHER] Pre-compilazione kernel CUDA NOVA (30-60s)...")
-    try:
-        _nova_cuda_ext = _compile_nova_cuda()
-        print("[LAUNCHER] Kernel CUDA compilato e cachato.")
-    except Exception as e:
-        print(f"[LAUNCHER] ATTENZIONE: Compilazione CUDA fallita: {e}")
-        print("[LAUNCHER] NOVA userà il fallback Python puro.")
+    # 2. Pre-compilazione kernel CUDA
+    if "nova" in activations:
+        print("[LAUNCHER] Pre-compilazione kernel CUDA NOVA (30-60s)...")
+        try:
+            _nova_cuda_ext = _compile_nova_cuda()
+            print("[LAUNCHER] Kernel CUDA compilato e cachato.")
+        except Exception as e:
+            print(f"[LAUNCHER] ATTENZIONE: Compilazione CUDA fallita: {e}")
+            print("[LAUNCHER] NOVA userà il fallback Python puro.")
 
-    # 3. Lancia a coppie sulle 2 GPU
+    # 3. Per ogni scala, lancia le attivazioni a coppie sulle 2 GPU
     script = os.path.abspath(__file__)
-    pairs = [(ALL_ACTIVATIONS[i], ALL_ACTIVATIONS[i + 1] if i + 1 < len(ALL_ACTIVATIONS) else None)
-             for i in range(0, len(ALL_ACTIVATIONS), 2)]
 
-    for pair in pairs:
-        procs = []
-        for gpu, act in enumerate(pair):
-            if act is None:
-                continue
-            cmd = [sys.executable, script, "--activation", act, "--gpu", str(gpu)]
-            print(f"\n[LAUNCHER] Avvio: {' '.join(cmd)}")
-            p = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
-            procs.append((act, p))
+    for scale in scales:
+        cfg = SCALING_CONFIGS[scale]
+        print(f"\n{'#'*60}")
+        print(f"  SCALA: {scale.upper()} ({cfg['num_layers']}L, "
+              f"{cfg['embed_dim']}d, {cfg['num_heads']}h)")
+        print(f"  Batch: {cfg['batch_size']}, LR: {cfg['lr']}, "
+              f"Epoche: {cfg['epochs']}")
+        print(f"{'#'*60}")
 
-        for act, p in procs:
-            p.wait()
-            if p.returncode != 0:
-                print(f"[LAUNCHER] ERRORE: {act} terminato con codice {p.returncode}")
-            else:
-                print(f"[LAUNCHER] {act.upper()} completato con successo.")
+        # Lancia a coppie sulle 2 GPU
+        pairs = [(activations[i],
+                  activations[i + 1] if i + 1 < len(activations) else None)
+                 for i in range(0, len(activations), 2)]
+
+        for pair in pairs:
+            procs = []
+            for gpu, act in enumerate(pair):
+                if act is None:
+                    continue
+                cmd = [sys.executable, script,
+                       "--scale", scale,
+                       "--activation", act,
+                       "--gpu", str(gpu)]
+                print(f"\n[LAUNCHER] Avvio: {' '.join(cmd)}")
+                p = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+                procs.append((act, p))
+
+            for act, p in procs:
+                p.wait()
+                if p.returncode != 0:
+                    print(f"[LAUNCHER] ERRORE: {scale}/{act} "
+                          f"terminato con codice {p.returncode}")
+                else:
+                    print(f"[LAUNCHER] {scale.upper()}/{act.upper()} "
+                          f"completato con successo.")
+
+    print(f"\n{'='*60}")
+    print("  SCALING STUDY COMPLETATO")
+    print(f"{'='*60}")
 
 
 # ==============================================================
@@ -712,21 +765,32 @@ def launch_all():
 # ==============================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mini-ViT CIFAR-100: NOVA vs GELU/SiLU/Mish/ReLU")
+    parser = argparse.ArgumentParser(
+        description="ViT Scaling Study CIFAR-100: NOVA vs GELU")
+    parser.add_argument("--scale", type=str,
+                        choices=list(SCALING_CONFIGS.keys()),
+                        help="Scala del modello (ometti per tutte)")
     parser.add_argument("--activation", type=str,
                         choices=["nova", "gelu", "silu", "mish", "relu"],
-                        help="Funzione di attivazione (ometti per lanciare tutti)")
+                        help="Funzione di attivazione (ometti per NOVA+GELU)")
     parser.add_argument("--gpu", type=int, default=0,
                         help="ID della GPU (default: 0)")
     args = parser.parse_args()
 
-    if args.activation is None:
-        # Modalità parallela: lancia entrambi
+    if args.scale is not None and args.activation is not None:
+        # Singolo esperimento
+        run_experiment(args.scale, args.activation, args.gpu)
+    elif args.activation is not None and args.scale is None:
+        # Tutte le scale per una singola attivazione
+        for scale in SCALING_CONFIGS:
+            run_experiment(scale, args.activation, args.gpu)
+    else:
+        # Modalità parallela: tutte le scale, NOVA vs GELU
         n_gpus = torch.cuda.device_count()
         if n_gpus < 2:
             print(f"[ATTENZIONE] Solo {n_gpus} GPU disponibili. "
-                  "Lancia manualmente con --activation e --gpu.")
+                  "Lancia manualmente con --scale, --activation e --gpu.")
             sys.exit(1)
-        launch_all()
-    else:
-        run_experiment(args.activation, args.gpu)
+
+        scales = [args.scale] if args.scale else None
+        launch_all(scales=scales)
