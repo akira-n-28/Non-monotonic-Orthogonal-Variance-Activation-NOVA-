@@ -61,14 +61,30 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Log in `results/vit_scaling_v2_{scale}_{activation}_20260222*.json`
   - Plot in `results/plot_v2_*.png`
 
-### Da Fare
-* **ViT su Tiny-ImageNet-200** (`experiments/vit_tinyimagenet.py`): Validazione cross-dataset dei risultati CIFAR-100.
-  - Dataset: 200 classi, 100K train, 10K val, 64×64 RGB
+* **ViT su Tiny-ImageNet-200** (`experiments/vit_tinyimagenet.py`): Validazione cross-dataset su Tiny-ImageNet-200 (200 classi, 64×64).
   - Architettura: stessa famiglia ViT (Tiny/Small/Base), patch_size=8 (→ 64 patch)
-  - Regolarizzazione DeiT-style calibrata per scala (lezioni da v2/v3 CIFAR-100)
-  - Batch size calibrati per saturare ~14 GB su T4: 3072/1536/1024
-  - Include top-5 accuracy e plot cross-dataset CIFAR vs TinyImageNet
-  - Uso: `python vit_tinyimagenet.py` (full run) oppure `python vit_tinyimagenet.py --plot-only`
+  - Regolarizzazione calibrata per scala: Tiny (RandAug mag 5, CutMix/Mixup prob 0.5, DropPath 0.05), Small/Base (DeiT-style piena)
+  - Config: Tiny batch 512 lr=2e-3, Small batch 256 lr=1e-3, Base batch 128 lr=5e-4
+  - Tiny (3.3M): NOVA 47.71% vs GELU 45.96% (+1.75) | Top-5: 72.52% vs 71.32%
+  - Small (10.8M): NOVA 51.01% vs GELU 46.43% (+4.58) | Top-5: 75.49% vs 72.18%
+  - Base (25.5M): NOVA 50.75% vs GELU 44.70% (+6.05) | Top-5: 75.32% vs 70.15%
+  - Vantaggio monotonamente crescente con la scala, conferma cross-dataset
+  - β converge a ~0.54-0.58 (più alto di CIFAR-100 v2, adattamento a dataset più complesso)
+  - Log in `results/vit_tinyimagenet_{scale}_{activation}_20260223*.json`
+  - Plot in `results/plot_tinyimagenet_*.png`
+
+* **ConvNeXt CIFAR-100** (`experiments/convnext_cifar100.py`): Generalizzazione architetturale su CNN pura (no attention).
+  - ConvNeXt (Liu et al. 2022) adattato per CIFAR-100 (32×32), stem stride-1, Layer Scale
+  - Tiny (dims [40,80,160,320], depths [2,2,6,2], 3.5M): NOVA 65.88% vs GELU 65.74% (+0.14)
+  - Small (dims [64,128,256,512], depths [3,3,6,3], 11.0M): NOVA 75.01% vs GELU 74.36% (+0.65)
+  - Base (dims [96,192,384,768], depths [3,3,9,3], 28.1M): NOVA 79.03% vs GELU 78.07% (+0.96)
+  - Vantaggio NOVA presente ma più contenuto rispetto a ViT (+0.14-0.96 vs +6.60-7.17)
+  - β converge a ~0.23-0.30 (molto più basso di ViT ~0.45), NOVA si avvicina a SiLU in contesto CNN
+  - Config: Tiny batch 2048 lr=4e-3, Small batch 1024 lr=3e-3, Base batch 512 lr=2e-3
+  - Log in `results/convnext_cifar100_{scale}_{activation}_20260223*.json`
+  - Plot in `results/plot_convnext_*.png`
+
+### Da Fare
 * **Scaling ViT v3 — Regolarizzazione Calibrata** (`experiments/vit_scaling_v3.py`): Corregge il sotto-adattamento Tiny di v2 calibrando la regolarizzazione per scala.
   - Tiny: RandAugment mag 5 (era 9), CutMix/Mixup prob 0.5 (era 1.0), DropPath 0.05 (era 0.1)
   - Small/Base: invariati rispetto a v2

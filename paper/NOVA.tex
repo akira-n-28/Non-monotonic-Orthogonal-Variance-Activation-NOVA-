@@ -26,7 +26,7 @@
 \maketitle
 
 \begin{abstract}
-La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Uno studio di scaling su tre varianti di ViT (3.2M--25.3M parametri) mostra un vantaggio crescente di NOVA su GELU (da $+2.28$ a $+4.07$ punti percentuali). Con regolarizzazione DeiT-style (RandAugment, CutMix, Mixup, Stochastic Depth), il vantaggio si amplifica fino a $+8.35$ pp alla scala Small ($62.66\%$ vs $54.31\%$) e l'accuracy alla scala Base recupera $+5.09$ pp, suggerendo una forte complementarità tra la regolarizzazione implicita di NOVA e quella esplicita. Una validazione cross-dataset su Tiny-ImageNet-200 (200 classi, $64\times64$) conferma il pattern: il vantaggio di NOVA cresce da $+1.75$ (Tiny) a $+6.05$ pp (Base) in Top-1 accuracy, con miglioramenti analoghi in Top-5, rafforzando l'ipotesi che il beneficio di NOVA sia indipendente dal dataset e cresca con la capacità del modello. Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
+La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Uno studio di scaling su tre varianti di ViT (3.2M--25.3M parametri) mostra un vantaggio crescente di NOVA su GELU (da $+2.28$ a $+4.07$ punti percentuali). Con regolarizzazione DeiT-style (RandAugment, CutMix, Mixup, Stochastic Depth), il vantaggio si amplifica fino a $+8.35$ pp alla scala Small ($62.66\%$ vs $54.31\%$) e l'accuracy alla scala Base recupera $+5.09$ pp, suggerendo una forte complementarità tra la regolarizzazione implicita di NOVA e quella esplicita. Una validazione cross-dataset su Tiny-ImageNet-200 (200 classi, $64\times64$) conferma il pattern: il vantaggio di NOVA cresce da $+1.75$ (Tiny) a $+6.05$ pp (Base) in Top-1 accuracy, con miglioramenti analoghi in Top-5, rafforzando l'ipotesi che il beneficio di NOVA sia indipendente dal dataset e cresca con la capacità del modello. Un test di generalizzazione architetturale su ConvNeXt (CNN pura, no attention) su CIFAR-100 conferma il vantaggio a tutte le scale ($+0.14$ a $+0.96$ pp), con $\beta$ convergente a valori inferiori ($\approx 0.23$--$0.30$), suggerendo che il contributo di NOVA sia complementare al bias induttivo convolutivo. Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
 \end{abstract}
 
 \tableofcontents
@@ -291,6 +291,46 @@ Il vantaggio assoluto è più contenuto su Tiny-ImageNet-200 (Tabella~\ref{tab:c
 
 Il parametro $\beta$ converge a valori leggermente superiori rispetto a CIFAR-100 v2 ($\approx 0.54$--$0.58$ vs $\approx 0.45$), suggerendo un adattamento automatico alla maggiore complessità del dataset.
 
+\subsection{Generalizzazione Architetturale (ConvNeXt su CIFAR-100)}
+
+Per verificare che il vantaggio di NOVA non sia specifico ai Vision Transformer, abbiamo condotto uno studio di scaling su ConvNeXt~\cite{liu2022convnet}, un'architettura interamente convolutiva (no attention) che adotta GELU per design. La sostituzione di GELU con NOVA è quindi un test diretto e pulito dell'impatto della funzione di attivazione in contesto CNN.
+
+Abbiamo adattato ConvNeXt per CIFAR-100 ($32\times32$) con stem stride-1, 4 stage con downsample $32\to16\to8\to4$, Layer Scale ($\gamma_0=10^{-6}$), e tre scale calibrate per avere parametri comparabili ai ViT: Tiny (dims $[40, 80, 160, 320]$, depths $[2,2,6,2]$, 3.5M), Small (dims $[64, 128, 256, 512]$, depths $[3,3,6,3]$, 11.0M), Base (dims $[96, 192, 384, 768]$, depths $[3,3,9,3]$, 28.1M). La regolarizzazione segue lo stesso schema calibrato per scala: Tiny con RandAugment magnitudine~5, CutMix/Mixup probabilità~$0.5$, DropPath~$0.05$; Small e Base con regolarizzazione piena.
+
+\begin{table}[h]
+\centering
+\caption{ConvNeXt su CIFAR-100 -- NOVA vs GELU (run singola, seed 42, 100 epoche, FP16, 2$\times$T4).}
+\label{tab:convnext}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Scala} & \textbf{Config} & \textbf{Params} & \textbf{NOVA} & \textbf{GELU} & \textbf{$\Delta$} \\
+\midrule
+Tiny  & $[40,80,160,320]$, $[2,2,6,2]$ & 3.5M  & 65.88\% & 65.74\% & +0.14 \\
+Small & $[64,128,256,512]$, $[3,3,6,3]$ & 11.0M & 75.01\% & 74.36\% & +0.65 \\
+Base  & $[96,192,384,768]$, $[3,3,9,3]$ & 28.1M & \textbf{79.03\%} & 78.07\% & +0.96 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+I risultati (Tabella~\ref{tab:convnext}) confermano che NOVA supera GELU a tutte le scale anche in un'architettura puramente convolutiva, con un vantaggio che cresce monotonamente con la capacità ($+0.14 \to +0.65 \to +0.96$ pp). Tuttavia, i margini sono significativamente inferiori rispetto al ViT (Tabella~\ref{tab:arch_comparison}).
+
+\begin{table}[h]
+\centering
+\caption{Confronto cross-architettura del vantaggio NOVA--GELU (pp) su CIFAR-100.}
+\label{tab:arch_comparison}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Scala} & \textbf{ViT (v2)} & \textbf{ConvNeXt} \\
+\midrule
+Tiny  & +6.60 & +0.14 \\
+Small & +8.35 & +0.65 \\
+Base  & +7.17 & +0.96 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La differenza di magnitudine suggerisce che NOVA sia particolarmente efficace nelle architetture dove l'attivazione è l'unica fonte di non-linearità tra proiezioni lineari dense (come nel MLP dei Transformer), mentre in ConvNeXt le convoluzioni depthwise forniscono già un forte bias induttivo spaziale che riduce la dipendenza dalla funzione di attivazione. Il parametro $\beta$ conferma questa interpretazione: in ConvNeXt, $\beta$ converge a valori significativamente più bassi ($\approx 0.23$--$0.30$ vs $\approx 0.45$ nel ViT), riducendo l'ampiezza della sacca non-monotona e avvicinando il comportamento di NOVA a quello di SiLU. L'ottimizzazione adatta spontaneamente la curvatura al contesto architetturale.
+
 \subsection{Modellazione Autoregressiva (Nano-GPT)}
 
 Abbiamo addestrato un Nano-GPT ($\approx$10M parametri) sul dataset TinyShakespeare per 1000 iterazioni. NOVA ha prodotto una Validation Loss di $1.6949$ rispetto a $1.7344$ di GELU. L'osservazione suggerisce che il meccanismo di gating potenziato di NOVA possa contribuire a mitigare la saturazione dimensionale nei blocchi Feed-Forward dei Transformer.
@@ -376,7 +416,8 @@ Il presente lavoro costituisce una \textit{Proof of Concept} e presenta le segue
 In base alle intuizioni teoriche e ai trend osservati in questa indagine preliminare:
 
 \begin{itemize}
-  \item \textbf{Consigliato:} Architetture LayerNorm / RMSNorm (Vision Transformers, LLM Decoder-only); Scientific Machine Learning su PDE con onde d'urto o singolarità.
+  \item \textbf{Fortemente consigliato:} Architetture LayerNorm / RMSNorm con MLP denso (Vision Transformers, LLM Decoder-only); Scientific Machine Learning su PDE con onde d'urto o singolarità.
+  \item \textbf{Vantaggio modesto:} Architetture convolutive con LayerNorm (es. ConvNeXt), dove il bias induttivo spaziale riduce la dipendenza dall'attivazione.
   \item \textbf{Sconsigliato:} Reti con forte uso di Batch Normalization (es. ResNet); modelli generativi a diffusione continua (DDPM, score-based models).
 \end{itemize}
 
@@ -437,6 +478,11 @@ Mixup: Beyond empirical risk minimization.
 Huang, G., Sun, Y., Liu, Z., Sedra, D., \& Weinberger, K.\,Q. (2016).
 Deep networks with stochastic depth.
 \textit{European Conference on Computer Vision (ECCV)}, pp.~646--661.
+
+\bibitem{liu2022convnet}
+Liu, Z., Mao, H., Wu, C.\,Y., Feichtenhofer, C., Darrell, T., \& Xie, S. (2022).
+A ConvNet for the 2020s.
+\textit{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, pp.~11976--11986.
 
 \end{thebibliography}
 
