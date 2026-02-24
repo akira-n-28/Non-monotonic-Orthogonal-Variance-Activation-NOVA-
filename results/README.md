@@ -38,6 +38,19 @@ Ogni file di log deve contenere almeno questi campi:
 }
 ```
 
+## Esperimenti Presenti
+
+### ViT CIFAR-100 (v1) — 5 attivazioni
+- `vit_cifar100_{nova,gelu,relu,silu,mish}_20260222.json`
+
+### Scaling ViT (v1) — NOVA vs GELU, 3 scale
+- `vit_scaling_{tiny,small,base}_{nova,gelu}_20260222_*.json`
+
+### Scaling ViT v2 (anti-overfitting) — NOVA vs GELU, 3 scale
+- `vit_scaling_v2_{tiny,small,base}_{nova,gelu}_20260222_*.json`
+- `plot_v2_training_curves.png` — curve di training per scala
+- `plot_v2_beta_evolution.png` — evoluzione del parametro β
+
 ## Nota
 
 Qualsiasi numero citato nel paper LaTeX (`paper/NOVA.tex`) o nel `README.md` del progetto **deve** avere un file corrispondente in questa cartella che lo giustifichi.
