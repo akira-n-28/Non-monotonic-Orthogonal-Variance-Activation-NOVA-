@@ -115,7 +115,27 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Small/Base: invariati rispetto a v2
   - Plot con confronto v1/v2/v3
   - Uso: `python vit_scaling_v3.py` (full run) oppure `python vit_scaling_v3.py --plot-only`
-* **Nano-GPT** (TinyShakespeare): risultati preliminari nel paper (NOVA 1.6949 vs GELU 1.7344), script da aggiornare con confronto multi-attivazione.
+* **Nano-GPT** (`experiments/nanogpt_shakespeare.py`): Scaling study su language modeling autoregressivo, TinyShakespeare char-level.
+  - **Dataset:** TinyShakespeare (~1MB, char-level, vocab ~65 token), split 90/10
+  - **Architettura:** Decoder-only Transformer (pre-LN, causal attention, weight tying)
+    - Tiny (4L, 256d, 4h, MLP×4, ~3M params)
+    - Small (6L, 384d, 6h, MLP×4, ~10M params)
+    - Base (8L, 512d, 8h, MLP×4, ~25M params)
+  - **Training:** 5000 iterazioni, batch 64, context 256, AdamW (betas 0.9/0.95), warmup 500 iter + cosine decay, FP16, grad clip 1.0
+    - Tiny lr=1e-3, Small lr=6e-4, Base lr=3e-4, weight_decay=0.01
+  - **Attivazioni:** NOVA, GELU, SiLU, Mish, ReLU (5 confronti)
+  - **Metriche:** Val loss (CE), perplexity (exp(val_loss)), β evolution, campioni di testo generato
+  - **Eval:** ogni 250 iter (200 batch random), campioni testo ogni 1000 iter
+  - **Plot (4):**
+    1. Training curves per scala: val loss vs iterazione
+    2. Scaling curve: best val loss vs parametri
+    3. Perplexity scaling: best perplexity vs parametri
+    4. β evolution: convergenza di β per scala (NOVA)
+  - **Output:**
+    - Log: `results/nanogpt_{scale}_{activation}_{timestamp}.json`
+    - Plot: `results/plot_nanogpt_*.png`
+  - Uso: `python nanogpt_shakespeare.py` (full run) oppure `python nanogpt_shakespeare.py --scale small --activation nova --gpu 0` oppure `python nanogpt_shakespeare.py --plot-only`
+  - Risultati preliminari precedenti (solo Small, solo NOVA vs GELU, 1000 iter): NOVA 1.6949 vs GELU 1.7344
 * **PINN Burgers 1D**: risultati preliminari nel paper (NOVA 0.00027 vs GELU 0.00353), script da aggiornare.
 * **DDPM Fashion-MNIST**: risultati preliminari nel paper (NOVA 0.0382 vs GELU 0.0372), script da aggiornare.
 
