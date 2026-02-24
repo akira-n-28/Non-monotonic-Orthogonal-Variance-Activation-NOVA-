@@ -84,8 +84,8 @@ SCALING_CONFIGS = {
     "tiny": {
         "dims": [40, 80, 160, 320],
         "depths": [2, 2, 6, 2],
-        "batch_size": 2048,
-        "lr": 4e-3,
+        "batch_size": 256,
+        "lr": 1e-3,
         "epochs": 100,
         "warmup_epochs": 10,
         "weight_decay": 0.05,
@@ -100,8 +100,8 @@ SCALING_CONFIGS = {
     "small": {
         "dims": [64, 128, 256, 512],
         "depths": [3, 3, 6, 3],
-        "batch_size": 1024,
-        "lr": 3e-3,
+        "batch_size": 256,
+        "lr": 1e-3,
         "epochs": 100,
         "warmup_epochs": 15,
         "weight_decay": 0.05,
@@ -116,8 +116,8 @@ SCALING_CONFIGS = {
     "base": {
         "dims": [96, 192, 384, 768],
         "depths": [3, 3, 9, 3],
-        "batch_size": 512,
-        "lr": 2e-3,
+        "batch_size": 128,
+        "lr": 5e-4,
         "epochs": 100,
         "warmup_epochs": 20,
         "weight_decay": 0.05,
