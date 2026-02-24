@@ -84,6 +84,15 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Log in `results/convnext_cifar100_{scale}_{activation}_20260223*.json`
   - Plot in `results/plot_convnext_*.png`
 
+* **ConvNeXt CIFAR-100 v2 — Iperparametri Ottimizzati** (`experiments/convnext_cifar100.py`): Stessa architettura, batch size e learning rate ridotti.
+  - Config v2: Tiny batch 256 lr=1e-3, Small batch 256 lr=1e-3, Base batch 128 lr=5e-4
+  - Tiny (3.5M): NOVA 70.97% vs GELU 69.45% (+1.52) — miglioramento assoluto +5pp vs v1, delta NOVA 10× più grande
+  - Small (11.0M): NOVA 76.39% vs GELU 75.46% (+0.93) — miglioramento assoluto +1.4pp vs v1
+  - Base (28.1M): NOVA 77.99% vs GELU 76.62% (+1.37) — accuracy assoluta leggermente inferiore a v1, ma delta NOVA sale
+  - Vantaggio NOVA amplificato a tutte le scale (da +0.14-0.96 in v1 a +0.93-1.52 in v2)
+  - Batch size più piccolo favorisce Tiny (+5pp) ma penalizza Base (-1pp assoluto), suggerendo che gli iperparametri ottimali vadano calibrati per scala
+  - Log in `results/convnext_cifar100_v2_{scale}_{activation}_*.json`
+
 * **DiT DDPM su CIFAR-10 v2** (`experiments/dit_cifar10_v2.py`): Diffusion Transformer su CIFAR-10, solo scala Base.
   - **Motivazione:** Il risultato U-Net (NOVA 0.0382 > GELU 0.0372, GELU vince) è spiegato come "Smoothness Trade-off": la U-Net usa BatchNorm, che entra in conflitto con la non-monotonia di NOVA. Il DiT (Peebles & Xie, 2023) usa LayerNorm + AdaLN — contesto dove NOVA eccelle nei ViT. L'ipotesi era che NOVA recuperi con backbone Transformer.
   - **Architettura:** DiT-Base (8L, 384d, 6h, MLP×4, ~22M params), AdaLN-Zero conditioning, patch 4×4
