@@ -84,6 +84,22 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
   - Log in `results/convnext_cifar100_{scale}_{activation}_20260223*.json`
   - Plot in `results/plot_convnext_*.png`
 
+* **DiT DDPM su CIFAR-10 v2** (`experiments/dit_cifar10_v2.py`): Diffusion Transformer su CIFAR-10, solo scala Base.
+  - **Motivazione:** Il risultato U-Net (NOVA 0.0382 > GELU 0.0372, GELU vince) è spiegato come "Smoothness Trade-off": la U-Net usa BatchNorm, che entra in conflitto con la non-monotonia di NOVA. Il DiT (Peebles & Xie, 2023) usa LayerNorm + AdaLN — contesto dove NOVA eccelle nei ViT. L'ipotesi era che NOVA recuperi con backbone Transformer.
+  - **Architettura:** DiT-Base (8L, 384d, 6h, MLP×4, ~22M params), AdaLN-Zero conditioning, patch 4×4
+  - **Diffusion config:** Cosine schedule, T=1000, MSE ε-prediction, 400 epoche, DDIM sampler (250 step, η=0)
+  - **Training config:** AdamW lr=3e-4, wd=0.01, warmup 10ep + cosine decay, FP16+GradScaler, EMA decay 0.9995, grad clip 1.0, batch 128
+  - **Miglioramenti v2 rispetto a v1:** 400 epoche (da 100), EMA 0.9995 (da 0.9999), DDIM sampler (da DDPM), weight_decay 0.01, RandomCrop augmentation, FID ogni 25 epoche
+  - **Risultati (DiT-Base, ~22M params):**
+    - NOVA: best val loss 0.054673, best FID 21.74 (ep375), best IS 4.10
+    - GELU: best val loss 0.054585, best FID 21.45 (ep400), best IS 4.11
+    - Le due attivazioni sono sostanzialmente equivalenti su DiT-Base
+    - Il divario FID è minimo (0.29 punti, entro la varianza di run singola)
+  - **Evoluzione FID:** ep25: 88/86 → ep100: 32/31 → ep200: 25/25 → ep300: 23/22 → ep400: 22/21 (NOVA/GELU)
+  - **β NOVA:** converge a ~0.756 (più alto di ViT ~0.45 e ConvNeXt ~0.25)
+  - **Interpretazione:** L'ipotesi del recupero completo su DiT non è confermata — NOVA e GELU sono paragonabili, non c'è vantaggio significativo per nessuna delle due. Questo suggerisce che nel contesto generativo (ε-prediction) il beneficio della sacca non-monotona è neutro: non danneggia (come nella U-Net con BN) ma non aiuta (come nei ViT classificativi).
+  - Log in `results/dit_cifar10_base_{activation}_20260224*.json`
+
 ### Da Fare
 * **Scaling ViT v3 — Regolarizzazione Calibrata** (`experiments/vit_scaling_v3.py`): Corregge il sotto-adattamento Tiny di v2 calibrando la regolarizzazione per scala.
   - Tiny: RandAugment mag 5 (era 9), CutMix/Mixup prob 0.5 (era 1.0), DropPath 0.05 (era 0.1)
@@ -93,64 +109,6 @@ Il Kernel CUDA fuso (forward/backward) è implementato con le seguenti caratteri
 * **Nano-GPT** (TinyShakespeare): risultati preliminari nel paper (NOVA 1.6949 vs GELU 1.7344), script da aggiornare con confronto multi-attivazione.
 * **PINN Burgers 1D**: risultati preliminari nel paper (NOVA 0.00027 vs GELU 0.00353), script da aggiornare.
 * **DDPM Fashion-MNIST**: risultati preliminari nel paper (NOVA 0.0382 vs GELU 0.0372), script da aggiornare.
-
-* **DiT DDPM su CIFAR-10** (`experiments/dit_cifar10.py`): Diffusion Transformer su CIFAR-10.
-  - **Motivazione:** Il risultato U-Net (NOVA 0.0382 > GELU 0.0372, GELU vince) è spiegato come "Smoothness Trade-off": la U-Net usa BatchNorm, che entra in conflitto con la non-monotonia di NOVA. Il DiT (Peebles & Xie, 2023) usa LayerNorm + AdaLN — esattamente il contesto dove NOVA eccelle nei ViT. L'ipotesi è che NOVA recuperi quando il backbone generativo è un Transformer.
-  - **Dataset:** CIFAR-10 (32×32, 3 canali, 10 classi) — più significativo di Fashion-MNIST come benchmark generativo, fattibile su T4.
-  - **Architettura DiT:**
-    ```
-    Input: x_noisy (32×32×3) + timestep t
-    ├── Patchify: Conv2d 4×4 stride 4 → 8×8 = 64 patch, proiezione a dim d
-    ├── + Positional Embedding (learnable, 64 token)
-    ├── N × DiT Block:
-    │   ├── AdaLN(LayerNorm, condizionato su t) — NO BatchNorm
-    │   ├── Multi-Head Self-Attention
-    │   ├── AdaLN(LayerNorm, condizionato su t)
-    │   └── MLP: Linear(d, 4d) → ATTIVAZIONE → Linear(4d, d)  ← qui entra NOVA/GELU/etc.
-    ├── Final AdaLN → Linear(d, patch_size² × 3) = Linear(d, 48)
-    └── Unpatchify → 32×32×3 (predizione del rumore ε)
-    ```
-  - Condizionamento timestep: sinusoidal → Linear → SiLU → Linear → (scale, shift, gate) per AdaLN. SiLU fisso nell'embedding (standard DiT), attivazione variabile solo nel backbone MLP.
-  - **Scaling:**
-    - Tiny (4L, 192d, 3h, MLP×4, ~1.5M params)
-    - Small (6L, 256d, 4h, MLP×4, ~4M params)
-    - Base (8L, 384d, 6h, MLP×4, ~10M params)
-  - **Diffusion config:** Cosine schedule, T=1000, MSE ε-prediction, 100 epoche, DDPM sampler
-  - **Training config:** AdamW lr=3e-4, wd=0.0, warmup 5ep + cosine decay, FP16+GradScaler, EMA decay 0.9999, grad clip 1.0
-    - Batch: 512 (Tiny), 256 (Small), 128 (Base)
-  - **EMA:** decay 0.9999, usato per val loss, generazione campioni e calcolo FID
-  - **Metriche:**
-    1. Train/Val MSE loss per epoca (val con EMA model)
-    2. FID su 10K campioni generati (ogni 10 epoche + finale, Inception v3 features)
-    3. IS (Inception Score) su 10K campioni (insieme al FID)
-    4. Evoluzione di β per epoca (NOVA)
-    5. Campioni visivi ogni 10 epoche (8×8 grid)
-  - **Struttura script:**
-    1. Imports + costanti + CUDA pre-compilation
-    2. set_seed(42), SCALING_CONFIGS
-    3. NOVA kernel CUDA + fallback Python
-    4. SinusoidalTimestepEmbedding, TimestepEmbedder, AdaLN
-    5. DiTBlock(dim, heads, activation): AdaLN → MHSA → AdaLN → MLP
-    6. DiT(scale, activation): Patchify → PosEmbed → N×DiTBlock → FinalLayer → Unpatchify
-    7. CosineNoiseSchedule(T=1000), EMA class
-    8. FID/IS computation (Inception v3)
-    9. train_one_epoch(), evaluate(), generate_samples(), compute_fid_is()
-    10. run_experiment(): loop 100 epoche + log JSON incrementale
-    11. generate_plots(): 7 plot
-    12. launch_all(): multi-GPU launcher
-    13. main(): argparse (--scale, --activation, --gpu, --plot-only)
-  - **Plot (7):**
-    1. Training curves per scala (2×3): train loss + val loss
-    2. Scaling curve: best val loss vs parametri
-    3. FID curves per scala (1×3): FID nel tempo
-    4. FID scaling: best FID vs parametri
-    5. IS scaling: best IS vs parametri
-    6. β evolution: convergenza di β per scala
-    7. Sample grid: campioni per attivazione (comparazione visiva)
-  - **Output:**
-    - Log: `results/dit_cifar10_{scale}_{activation}_{timestamp}.json`
-    - Campioni: `results/dit_cifar10_samples_{scale}_{activation}_epoch{N}.png`
-    - Plot: `results/plot_dit_cifar10_*.png`
 
 ## **7\. Workflow per Nuovi Esperimenti**
 

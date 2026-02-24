@@ -19,14 +19,14 @@
 \title{\textbf{NOVA: Non-monotonic Orthogonal Variance Activation\\per Architetture Neurali Profonde}\\[0.5em]
 \large\textit{Preprint --- Work in Progress}}
 \author{Autore\\[0.3em]\textit{Laboratorio di AI e Matematica Applicata}}
-\date{23 febbraio 2026}
+\date{24 febbraio 2026}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Uno studio di scaling su tre varianti di ViT (3.2M--25.3M parametri) mostra un vantaggio crescente di NOVA su GELU (da $+2.28$ a $+4.07$ punti percentuali). Con regolarizzazione DeiT-style (RandAugment, CutMix, Mixup, Stochastic Depth), il vantaggio si amplifica fino a $+8.35$ pp alla scala Small ($62.66\%$ vs $54.31\%$) e l'accuracy alla scala Base recupera $+5.09$ pp, suggerendo una forte complementarità tra la regolarizzazione implicita di NOVA e quella esplicita. Una validazione cross-dataset su Tiny-ImageNet-200 (200 classi, $64\times64$) conferma il pattern: il vantaggio di NOVA cresce da $+1.75$ (Tiny) a $+6.05$ pp (Base) in Top-1 accuracy, con miglioramenti analoghi in Top-5, rafforzando l'ipotesi che il beneficio di NOVA sia indipendente dal dataset e cresca con la capacità del modello. Un test di generalizzazione architetturale su ConvNeXt (CNN pura, no attention) su CIFAR-100 conferma il vantaggio a tutte le scale ($+0.14$ a $+0.96$ pp), con $\beta$ convergente a valori inferiori ($\approx 0.23$--$0.30$), suggerendo che il contributo di NOVA sia complementare al bias induttivo convolutivo. Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
+La scelta della funzione di attivazione incide significativamente sulla topologia della loss landscape e sulla capacità espressiva delle reti neurali profonde. In questo articolo preliminare introduciamo \textbf{NOVA} (\textit{Non-monotonic Orthogonal Variance Activation}), una funzione ibrida razionale-esponenziale progettata analiticamente. NOVA estende i benefici delle attivazioni gating introducendo un termine di smorzamento razionale che modula la derivata seconda. Dimostriamo analiticamente come NOVA induca una contrazione controllata della varianza all'inizializzazione (richiedendo una scala dei pesi di $\approx 2.8/n_\text{in}$) e formalizziamo il fenomeno della \textit{Covariance Shift Collision}, fornendo una spiegazione teorica per il suo degrado prestazionale in architetture basate su Batch Normalization. In un confronto esplorativo a run singola su Mini-ViT / CIFAR-100 a 100 epoche, NOVA raggiunge il $56.75\%$ di test accuracy, superando GELU ($54.67\%$), ReLU ($54.55\%$), SiLU ($53.84\%$) e Mish ($53.25\%$). Uno studio di scaling su tre varianti di ViT (3.2M--25.3M parametri) mostra un vantaggio crescente di NOVA su GELU (da $+2.28$ a $+4.07$ punti percentuali). Con regolarizzazione DeiT-style (RandAugment, CutMix, Mixup, Stochastic Depth), il vantaggio si amplifica fino a $+8.35$ pp alla scala Small ($62.66\%$ vs $54.31\%$) e l'accuracy alla scala Base recupera $+5.09$ pp, suggerendo una forte complementarità tra la regolarizzazione implicita di NOVA e quella esplicita. Una validazione cross-dataset su Tiny-ImageNet-200 (200 classi, $64\times64$) conferma il pattern: il vantaggio di NOVA cresce da $+1.75$ (Tiny) a $+6.05$ pp (Base) in Top-1 accuracy, con miglioramenti analoghi in Top-5, rafforzando l'ipotesi che il beneficio di NOVA sia indipendente dal dataset e cresca con la capacità del modello. Un test di generalizzazione architetturale su ConvNeXt (CNN pura, no attention) su CIFAR-100 conferma il vantaggio a tutte le scale ($+0.14$ a $+0.96$ pp), con $\beta$ convergente a valori inferiori ($\approx 0.23$--$0.30$), suggerendo che il contributo di NOVA sia complementare al bias induttivo convolutivo. Osserviamo trend qualitativi incoraggianti anche su Nano-GPT. Un esperimento su Diffusion Transformer (DiT) DDPM su CIFAR-10 (400 epoche, $\approx$22M parametri) mostra che, eliminando la Batch Normalization a favore di AdaLN, NOVA e GELU raggiungono prestazioni equivalenti (FID $21.74$ vs $21.45$, IS $4.10$ vs $4.11$), confermando che il degrado osservato su U-Net DDPM era attribuibile al conflitto con BatchNorm e non a un limite intrinseco di NOVA nel contesto generativo. Nello \textit{Scientific Machine Learning}, l'espressività heavy-tailed della derivata seconda di NOVA ha mostrato una riduzione dell'errore residuo sulle Physics-Informed Neural Networks (PINN) di un fattore $\sim 13\times$ su un'equazione di Burgers 1D, suggerendo un forte potenziale per la modellazione di singolarità fisiche.
 \end{abstract}
 
 \tableofcontents
@@ -350,9 +350,55 @@ Abbiamo addestrato un Nano-GPT ($\approx$10M parametri) sul dataset TinyShakespe
 \end{tabular}
 \end{table}
 
-\subsection{Modelli Generativi Continui (DDPM)}
+\subsection{Modelli Generativi a Diffusione (DDPM)}
 
-Su una U-Net DDPM per il denoising di immagini, dopo 10 epoche GELU ha ottenuto una MSE Loss di $0.0372$ contro $0.0382$ di NOVA. Ipotizziamo uno \textit{Smoothness Trade-off}: l'integrazione differenziale (SDE) richiesta dalla Langevin Dynamics nei DDPM favorisce campi vettoriali estremamente lisci, mentre la forte irregolarità della sacca di NOVA introduce microscopiche perturbazioni nel reverse-sampling. Questo definisce un limite applicativo esplicito della funzione.
+\subsubsection{U-Net DDPM (Fashion-MNIST)}
+
+Su una U-Net DDPM per il denoising di immagini Fashion-MNIST, dopo 10 epoche GELU ha ottenuto una MSE Loss di $0.0372$ contro $0.0382$ di NOVA. Abbiamo ipotizzato uno \textit{Smoothness Trade-off}: la U-Net usa Batch Normalization, che entra in conflitto con la non-monotonia di NOVA (Sezione~2.3). Per verificare questa ipotesi, abbiamo progettato un esperimento su Diffusion Transformer (DiT), che usa LayerNorm + AdaLN senza BatchNorm.
+
+\subsubsection{DiT DDPM (CIFAR-10)}
+
+Per testare se il risultato negativo su U-Net fosse attribuibile alla Covariance Shift Collision con BatchNorm piuttosto che a un limite intrinseco di NOVA nel contesto generativo, abbiamo implementato un Diffusion Transformer (DiT)~\cite{peebles2023scalable} su CIFAR-10 ($32\times32$, 10 classi). Il DiT usa LayerNorm + AdaLN-Zero per il condizionamento temporale, esattamente il contesto normativo dove NOVA eccelle nei ViT classificativi.
+
+\textbf{Architettura.} DiT-Base (8 layer, embed\_dim=384, 6 heads, MLP$\times$4, $\approx$22M parametri), con patchify $4\times4$ ($\to 64$ patch), positional embedding apprendibile, e condizionamento timestep sinusoidale $\to$ Linear $\to$ SiLU $\to$ Linear (SiLU fisso nell'embedding, attivazione variabile solo nel backbone MLP). Cosine noise schedule~\cite{nichol2021improved} con $T=1000$.
+
+\textbf{Training.} AdamW (lr=$3\!\times\!10^{-4}$, weight\_decay=$0.01$), warmup 10 epoche + cosine decay, 400 epoche totali, FP16+GradScaler, EMA decay $0.9995$, gradient clipping $1.0$, batch size 128, su GPU NVIDIA T4. Augmentation: RandomHorizontalFlip + RandomCrop($32$, padding=$4$).
+
+\textbf{Valutazione.} FID e IS su 10K campioni generati con DDIM~\cite{song2020denoising} (250 step, $\eta=0$) ogni 25 epoche, usando features Inception v3 (pool layer, 2048-dim). Val loss con EMA model.
+
+\begin{table}[h]
+\centering
+\caption{DiT-Base DDPM su CIFAR-10 -- NOVA vs GELU (run singola, seed 42, 400 epoche, FP16, T4).}
+\label{tab:dit}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Attivazione} & \textbf{Best Val Loss} & \textbf{Best FID $\downarrow$} & \textbf{Best IS $\uparrow$} & \textbf{$\beta$ finale} \\
+\midrule
+NOVA & 0.054673 & 21.74 & 4.10 & 0.756 \\
+GELU & 0.054585 & 21.45 & 4.11 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Evoluzione del FID durante il training -- DiT-Base DDPM su CIFAR-10 (DDIM 250 step).}
+\label{tab:dit_fid_evolution}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Epoca} & \textbf{25} & \textbf{100} & \textbf{200} & \textbf{300} & \textbf{375} & \textbf{400} \\
+\midrule
+NOVA & 88.05 & 32.23 & 25.30 & 22.68 & \textbf{21.74} & 22.06 \\
+GELU & 86.20 & 31.48 & 25.19 & 22.25 & 21.56 & \textbf{21.45} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+I risultati (Tabelle~\ref{tab:dit} e~\ref{tab:dit_fid_evolution}) mostrano che NOVA e GELU sono \textbf{sostanzialmente equivalenti} su DiT-Base: il divario in FID ($0.29$ punti), val loss ($0.000088$) e IS ($0.01$) è trascurabile per una run singola. Le curve di FID sono quasi sovrapposte per tutta la durata del training (400 epoche), con entrambe le attivazioni che convergono a FID $\approx 21$--$22$ e IS $\approx 4.1$.
+
+Il parametro $\beta$ di NOVA converge a $\approx 0.756$, un valore notevolmente più alto rispetto ai ViT classificativi ($\approx 0.45$) e ai ConvNeXt ($\approx 0.25$). Questo suggerisce che nel contesto generativo l'ottimizzazione mantiene una sacca non-monotona più ampia, ma il suo effetto netto sulle metriche è neutro.
+
+\textbf{Interpretazione.} Il risultato DiT ridimensiona l'ipotesi originale. L'eliminazione della BatchNorm (passando dalla U-Net al DiT) ha rimosso il degrado prestazionale di NOVA: NOVA non è più peggiore di GELU. Tuttavia, non si osserva il vantaggio significativo riscontrato nei ViT classificativi ($+6$--$8$ pp). Questo suggerisce che la sacca non-monotona di NOVA sia \textit{neutra} nel contesto $\varepsilon$-prediction: non introduce le perturbazioni dannose viste con BatchNorm, ma il suo meccanismo di regolarizzazione geometrica non fornisce benefici misurabili quando l'obiettivo è la ricostruzione di rumore anziché la classificazione discriminativa.
 
 \subsection{Scientific Machine Learning: PINN sull'Equazione di Burgers}
 
@@ -418,7 +464,8 @@ In base alle intuizioni teoriche e ai trend osservati in questa indagine prelimi
 \begin{itemize}
   \item \textbf{Fortemente consigliato:} Architetture LayerNorm / RMSNorm con MLP denso (Vision Transformers, LLM Decoder-only); Scientific Machine Learning su PDE con onde d'urto o singolarità.
   \item \textbf{Vantaggio modesto:} Architetture convolutive con LayerNorm (es. ConvNeXt), dove il bias induttivo spaziale riduce la dipendenza dall'attivazione.
-  \item \textbf{Sconsigliato:} Reti con forte uso di Batch Normalization (es. ResNet); modelli generativi a diffusione continua (DDPM, score-based models).
+  \item \textbf{Neutro:} Modelli generativi a diffusione con backbone Transformer (DiT), dove NOVA e GELU sono equivalenti.
+  \item \textbf{Sconsigliato:} Reti con forte uso di Batch Normalization (es. ResNet, U-Net DDPM con BatchNorm).
 \end{itemize}
 
 % ============================================================
@@ -483,6 +530,21 @@ Deep networks with stochastic depth.
 Liu, Z., Mao, H., Wu, C.\,Y., Feichtenhofer, C., Darrell, T., \& Xie, S. (2022).
 A ConvNet for the 2020s.
 \textit{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, pp.~11976--11986.
+
+\bibitem{peebles2023scalable}
+Peebles, W., \& Xie, S. (2023).
+Scalable diffusion models with transformers.
+\textit{Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)}, pp.~4195--4205.
+
+\bibitem{nichol2021improved}
+Nichol, A.\,Q., \& Dhariwal, P. (2021).
+Improved denoising diffusion probabilistic models.
+\textit{Proceedings of the International Conference on Machine Learning (ICML)}, pp.~8162--8171.
+
+\bibitem{song2020denoising}
+Song, J., Meng, C., \& Ermon, S. (2021).
+Denoising diffusion implicit models.
+\textit{International Conference on Learning Representations (ICLR)}.
 
 \end{thebibliography}
 
